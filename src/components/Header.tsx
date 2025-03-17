@@ -2,14 +2,31 @@ import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Music, Video, MessageSquare, Image, Menu, X, LogOut, User } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { useFacebookAuth } from '../contexts/FacebookAuthContext';
 import { FacebookAuth } from './FacebookAuth';
 
 export function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const { user, isAuthenticated, signOut, loading } = useAuth();
+  const { user: supabaseUser, isAuthenticated: isSupabaseAuthenticated, signOut: supabaseSignOut } = useAuth();
+  const { user: facebookUser, isAuthenticated: isFacebookAuthenticated, signOut: facebookSignOut, loading: facebookLoading } = useFacebookAuth();
 
+  // いずれかの認証方法で認証されているかどうか
+  const isAuthenticated = isSupabaseAuthenticated || isFacebookAuthenticated;
+  // 表示するユーザー情報（Facebookを優先）
+  const user = facebookUser || supabaseUser;
+  
   const toggleMenu = () => {
     setIsMenuOpen(!isMenuOpen);
+  };
+
+  const handleSignOut = async () => {
+    // 両方のサービスからログアウト
+    if (isFacebookAuthenticated) {
+      await facebookSignOut();
+    }
+    if (isSupabaseAuthenticated) {
+      await supabaseSignOut();
+    }
   };
 
   return (
@@ -50,13 +67,19 @@ export function Header() {
             </button>
             
             {/* 認証状態に応じたボタン表示 */}
-            {loading ? (
+            {facebookLoading ? (
               <div className="h-10 w-10 rounded-full bg-gray-200 animate-pulse"></div>
             ) : isAuthenticated ? (
               <div className="flex items-center space-x-2">
-                {user?.user_metadata?.avatar_url ? (
+                {facebookUser?.picture?.data?.url ? (
                   <img 
-                    src={user.user_metadata.avatar_url} 
+                    src={facebookUser.picture.data.url} 
+                    alt="Profile" 
+                    className="h-8 w-8 rounded-full"
+                  />
+                ) : supabaseUser?.user_metadata?.avatar_url ? (
+                  <img 
+                    src={supabaseUser.user_metadata.avatar_url} 
                     alt="Profile" 
                     className="h-8 w-8 rounded-full"
                   />
@@ -66,10 +89,10 @@ export function Header() {
                   </div>
                 )}
                 <span className="text-sm hidden md:inline-block">
-                  {user?.user_metadata?.full_name || user?.email || 'ユーザー'}
+                  {facebookUser?.name || supabaseUser?.user_metadata?.full_name || supabaseUser?.email || 'ユーザー'}
                 </span>
                 <button 
-                  onClick={signOut}
+                  onClick={handleSignOut}
                   className="text-gray-600 hover:text-gray-900"
                   title="ログアウト"
                 >
@@ -126,7 +149,7 @@ export function Header() {
               </Link>
               
               {/* モバイル用ログインボタン */}
-              {!isAuthenticated && !loading && (
+              {!isAuthenticated && !facebookLoading && (
                 <div className="px-4 py-2">
                   <FacebookAuth />
                 </div>

@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
-import { supabase } from '../lib/supabase';
 import { FaFacebook } from 'react-icons/fa';
+import { useFacebookAuth } from '../contexts/FacebookAuthContext';
 
 interface FacebookAuthProps {
-  onSuccess?: (session: any) => void;
+  onSuccess?: () => void;
   onError?: (error: Error) => void;
 }
 
 export function FacebookAuth({ onSuccess, onError }: FacebookAuthProps) {
+  const { signIn } = useFacebookAuth();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -17,27 +18,15 @@ export function FacebookAuth({ onSuccess, onError }: FacebookAuthProps) {
       setError(null);
       
       console.log('Facebookログインを開始します...');
+      await signIn();
       
-      const { data, error } = await supabase.auth.signInWithOAuth({
-        provider: 'facebook',
-        options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
-        },
-      });
-
-      if (error) {
-        console.error('Facebookログインエラー:', error);
-        setError(error.message);
-        onError?.(error);
-        return;
-      }
-
-      console.log('Facebookログイン成功:', data);
-      onSuccess?.(data);
+      console.log('Facebookログイン処理完了');
+      onSuccess?.();
     } catch (err) {
       console.error('予期せぬエラー:', err);
-      setError(err instanceof Error ? err.message : '不明なエラーが発生しました');
-      onError?.(err instanceof Error ? err : new Error('不明なエラーが発生しました'));
+      const errorMessage = err instanceof Error ? err.message : '不明なエラーが発生しました';
+      setError(errorMessage);
+      onError?.(err instanceof Error ? err : new Error(errorMessage));
     } finally {
       setLoading(false);
     }
