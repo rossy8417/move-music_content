@@ -1,0 +1,9 @@
+<svg width="300" height="180" viewBox="0 0 300 180" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="300" height="180" fill="#f5f0ff"/>
+  <path d="M80 60 L80 120 L100 120 L120 140 L120 120 L220 120 L220 60 Z" fill="#2d3748"/>
+  <circle cx="110" cy="90" r="8" fill="white"/>
+  <circle cx="150" cy="90" r="8" fill="white"/>
+  <circle cx="190" cy="90" r="8" fill="white"/>
+  <rect x="100" y="140" width="100" height="30" rx="5" fill="#2d3748"/>
+  <text x="150" y="160" font-family="Arial" font-size="14" fill="white" text-anchor="middle" dominant-baseline="middle">トーク</text>
+</svg> 

@@ -1,5 +1,43 @@
 import { createClient } from '@supabase/supabase-js';
 
+// ファイルの公開URLを取得する関数（エラーハンドリング強化版）
+export function getPublicFileUrl(bucket: string, path: string): string {
+  if (!path) {
+    console.error('ファイルパスが空です');
+    return '';
+  }
+
+  // すでにURLの場合はそのまま返す
+  if (path.startsWith('http')) {
+    return path;
+  }
+
+  try {
+    // パスの先頭のスラッシュを削除（Supabaseの仕様）
+    const cleanPath = path.startsWith('/') ? path.substring(1) : path;
+    
+    // 公開URLを生成
+    const { data } = supabase.storage.from(bucket).getPublicUrl(cleanPath);
+    
+    if (!data || !data.publicUrl) {
+      console.error('公開URL生成失敗:', { bucket, path, cleanPath });
+      return '';
+    }
+    
+    console.log('公開URL生成成功:', { 
+      bucket, 
+      path, 
+      cleanPath,
+      publicUrl: data.publicUrl
+    });
+    
+    return data.publicUrl;
+  } catch (error) {
+    console.error('公開URL生成エラー:', { bucket, path, error });
+    return '';
+  }
+}
+
 // 環境変数の読み込みを確認
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -257,9 +295,12 @@ export async function initializeStorage() {
       anonKeyPrefix: supabaseAnonKey ? supabaseAnonKey.substring(0, 10) + '...' : 'なし',
     });
 
-    // Supabase接続テスト
+    // Supabase接続テスト - count()ではなく単純なクエリを使用
     console.log('Supabase接続テスト中...');
-    const { data: connectionTest, error: connectionError } = await supabase.from('posts').select('count()', { count: 'exact', head: true });
+    const { data: connectionTest, error: connectionError } = await supabase
+      .from('posts')
+      .select('*')
+      .limit(1);
     
     if (connectionError) {
       console.error('Supabase接続エラー:', connectionError);
@@ -274,7 +315,7 @@ export async function initializeStorage() {
         console.error('認証エラー: APIキーが無効か期限切れです。環境変数を確認してください。');
       }
     } else {
-      console.log('Supabase接続成功:', connectionTest);
+      console.log('Supabase接続成功:', connectionTest ? `${connectionTest.length}件のデータを取得` : '接続OK');
     }
 
     // バケット一覧を取得して詳細をログに出力

@@ -1,15 +1,24 @@
 import React, { useEffect, useState } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
+import { supabase, getPublicFileUrl, STORAGE_BUCKET } from '../lib/supabase';
 import type { Post, PostCategory } from '../types/database';
 
-// カテゴリー別のデフォルト画像
-const DEFAULT_IMAGES = {
-  character: '/assets/default-character.svg',
-  music: '/assets/default-music.svg',
-  talk: '/assets/default-talk.svg',
-  video: '/assets/default-video.svg',
-  default: '/assets/default-post.svg'
+// カテゴリー別の背景色
+const CATEGORY_COLORS = {
+  character: 'e6f7ff',
+  music: 'f0f7ff',
+  talk: 'f5f0ff',
+  video: 'fff0f6',
+  default: 'f0f4f8'
+};
+
+// カテゴリー別のアイコン
+const CATEGORY_ICONS = {
+  character: '👤',
+  music: '🎵',
+  talk: '💬',
+  video: '🎬',
+  default: '📄'
 };
 
 export function Home() {
@@ -45,7 +54,7 @@ export function Home() {
   const getThumbnailUrl = (post: Post) => {
     // 1. アップロードされたファイルがある場合
     if (post.file_url) {
-      console.log('ファイルURL:', post.file_url);
+      console.log('ファイルURL (元のパス):', post.file_url);
       // 画像ファイルの拡張子かどうかをチェック
       const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg'];
       const isImage = imageExtensions.some(ext => 
@@ -53,8 +62,17 @@ export function Home() {
       );
       
       if (isImage) {
-        // Supabaseのストレージから画像URLを生成
-        return supabase.storage.from('contest-files').getPublicUrl(post.file_url).data.publicUrl;
+        try {
+          // 改善された関数を使用
+          const publicUrl = getPublicFileUrl(STORAGE_BUCKET, post.file_url);
+          if (publicUrl) {
+            return publicUrl;
+          }
+          throw new Error('画像URLの生成に失敗しました');
+        } catch (err) {
+          console.error('画像URL生成エラー:', err);
+          // エラー時はカテゴリー別のプレースホルダーを使用
+        }
       }
     }
     
@@ -67,24 +85,35 @@ export function Home() {
         const videoId = youtubeMatch[1];
         return `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`;
       }
-      
-      // Vimeo URLからサムネイルを取得（注：実際にはVimeo APIが必要）
-      const vimeoMatch = post.external_url.match(/vimeo\.com\/(\d+)/);
-      if (vimeoMatch && vimeoMatch[1]) {
-        // 本来はVimeo APIを使用すべきですが、ここではプレースホルダーとして
-        return DEFAULT_IMAGES.video;
-      }
-      
-      // ニコニコ動画URLからサムネイルを取得
-      const nicovideoMatch = post.external_url.match(/nicovideo\.jp\/watch\/(sm\d+)/);
-      if (nicovideoMatch && nicovideoMatch[1]) {
-        // ニコニコ動画のサムネイルURLフォーマット
-        return DEFAULT_IMAGES.video;
-      }
     }
     
-    // 3. カテゴリー別のデフォルト画像を返す
-    return DEFAULT_IMAGES[post.category] || DEFAULT_IMAGES.default;
+    // 3. カテゴリー別のプレースホルダー画像を返す
+    const color = CATEGORY_COLORS[post.category] || CATEGORY_COLORS.default;
+    const icon = CATEGORY_ICONS[post.category] || CATEGORY_ICONS.default;
+    return `https://placehold.co/300x180/${color}/2d3748?text=${icon}+${post.category}`;
+  };
+
+  // コンテンツタイプを判定する関数
+  const getContentType = (post: Post) => {
+    if (post.file_url) {
+      const videoExts = ['.mp4', '.webm', '.ogg', '.mov'];
+      const audioExts = ['.mp3', '.wav', '.ogg', '.m4a'];
+      const imageExts = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg'];
+      
+      if (videoExts.some(ext => post.file_url?.toLowerCase().endsWith(ext))) return 'video';
+      if (audioExts.some(ext => post.file_url?.toLowerCase().endsWith(ext))) return 'audio';
+      if (imageExts.some(ext => post.file_url?.toLowerCase().endsWith(ext))) return 'image';
+    }
+    
+    if (post.external_url) {
+      if (post.external_url.includes('youtube.com') || post.external_url.includes('youtu.be')) return 'youtube';
+      if (post.external_url.includes('vimeo.com')) return 'vimeo';
+      if (post.external_url.includes('nicovideo.jp')) return 'nicovideo';
+      if (post.external_url.includes('soundcloud.com')) return 'soundcloud';
+      if (post.external_url.includes('spotify.com')) return 'spotify';
+    }
+    
+    return 'unknown';
   };
 
   if (loading) {
@@ -106,45 +135,76 @@ export function Home() {
           <p className="text-gray-600">No posts found</p>
         </div>
       ) : (
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {posts.map((post) => (
-            <Link 
-              key={post.id} 
-              to={`/posts/${post.id}`}
-              className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-shadow duration-300"
-            >
-              <div className="aspect-video relative overflow-hidden bg-gray-100">
-                <img 
-                  src={getThumbnailUrl(post)} 
-                  alt={post.title}
-                  className="w-full h-full object-cover"
-                  onError={(e) => {
-                    // 画像読み込みエラー時にデフォルト画像に置き換え
-                    console.error('画像読み込みエラー:', e);
-                    const target = e.target as HTMLImageElement;
-                    target.src = DEFAULT_IMAGES[post.category] || DEFAULT_IMAGES.default;
-                  }}
-                />
-                {post.external_url && (
-                  <div className="absolute top-0 right-0 bg-blue-500 text-white text-xs px-2 py-1 m-2 rounded">
-                    外部リンク
+        <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+          {posts.map((post) => {
+            const contentType = getContentType(post);
+            const color = CATEGORY_COLORS[post.category] || CATEGORY_COLORS.default;
+            const icon = CATEGORY_ICONS[post.category] || CATEGORY_ICONS.default;
+            
+            return (
+              <Link 
+                key={post.id} 
+                to={`/posts/${post.id}`}
+                className="bg-white rounded-lg shadow-sm overflow-hidden hover:shadow-md transition-shadow duration-300"
+              >
+                <div className="aspect-video relative overflow-hidden bg-gray-100">
+                  <div 
+                    className={`absolute inset-0 flex items-center justify-center bg-[#${color}] text-[#2d3748] text-4xl`}
+                    style={{ zIndex: 1 }}
+                  >
+                    {icon}
                   </div>
-                )}
-                <div className="absolute bottom-0 right-0 bg-black bg-opacity-60 text-white text-xs px-2 py-1 m-2 rounded capitalize">
-                  {post.category}
+                  <img 
+                    src={getThumbnailUrl(post)} 
+                    alt={post.title}
+                    className="relative z-10 w-full h-full object-cover"
+                    onError={(e) => {
+                      console.error('画像読み込みエラー:', e);
+                      const target = e.target as HTMLImageElement;
+                      
+                      // ファイルURLが直接アクセス可能かチェック
+                      if (post.file_url && post.file_url.startsWith('http')) {
+                        console.log('直接URLを試行:', post.file_url);
+                        target.src = post.file_url;
+                        return;
+                      }
+                      
+                      // それでもダメなら画像を非表示にして背景を表示
+                      target.style.display = 'none';
+                    }}
+                  />
+                  
+                  {/* コンテンツタイプアイコン */}
+                  <div className="absolute top-0 left-0 bg-black bg-opacity-60 text-white text-xs px-2 py-1 m-2 rounded z-20">
+                    {contentType === 'video' && '🎬'}
+                    {contentType === 'audio' && '🎵'}
+                    {contentType === 'image' && '🖼️'}
+                    {contentType === 'youtube' && '▶️'}
+                    {contentType === 'vimeo' && '📹'}
+                    {contentType === 'nicovideo' && '📺'}
+                    {contentType === 'soundcloud' && '🔊'}
+                    {contentType === 'spotify' && '🎧'}
+                  </div>
+                  
+                  {post.external_url && (
+                    <div className="absolute top-0 right-0 bg-blue-500 text-white text-xs px-2 py-1 m-2 rounded z-20">
+                      外部
+                    </div>
+                  )}
+                  
+                  <div className="absolute bottom-0 right-0 bg-black bg-opacity-60 text-white text-xs px-2 py-1 m-2 rounded capitalize z-20">
+                    {post.category}
+                  </div>
                 </div>
-              </div>
-              <div className="p-4">
-                <h2 className="text-xl font-semibold mb-2 line-clamp-2">{post.title}</h2>
-                {post.description && (
-                  <p className="text-gray-600 mb-3 line-clamp-2 text-sm">{post.description}</p>
-                )}
-                <div className="flex items-center justify-between text-sm text-gray-500">
-                  <span>{new Date(post.created_at).toLocaleDateString()}</span>
+                <div className="p-3">
+                  <h2 className="text-sm font-semibold mb-1 line-clamp-1">{post.title}</h2>
+                  <div className="flex items-center justify-between text-xs text-gray-500">
+                    <span>{new Date(post.created_at).toLocaleDateString()}</span>
+                  </div>
                 </div>
-              </div>
-            </Link>
-          ))}
+              </Link>
+            );
+          })}
         </div>
       )}
     </div>

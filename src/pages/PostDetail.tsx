@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
+import { useParams, Link } from 'react-router-dom';
+import { supabase, getPublicFileUrl, STORAGE_BUCKET } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
 import type { Post, Comment, Profile } from '../types/database';
-import { MessageSquare, ThumbsUp, Vote } from 'lucide-react';
+import { MessageSquare, ThumbsUp, Vote, ArrowLeft, ExternalLink, Play, Pause, Volume2, VolumeX } from 'lucide-react';
 
 export function PostDetail() {
   const { id } = useParams<{ id: string }>();
@@ -17,6 +17,10 @@ export function PostDetail() {
   const [likesCount, setLikesCount] = useState(0);
   const [hasVoted, setHasVoted] = useState(false);
   const [hasLiked, setHasLiked] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
+  const audioRef = React.useRef<HTMLAudioElement>(null);
+  const videoRef = React.useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -24,111 +28,302 @@ export function PostDetail() {
     async function fetchPostData() {
       setLoading(true);
       
-      // Fetch post
-      const { data: postData, error: postError } = await supabase
-        .from('posts')
-        .select('*')
-        .eq('id', id)
-        .single();
+      try {
+        // Fetch post
+        const { data: postData, error: postError } = await supabase
+          .from('posts')
+          .select('*')
+          .eq('id', id)
+          .single();
 
-      if (postError) {
-        console.error('Error fetching post:', postError);
+        if (postError) {
+          console.error('Error fetching post:', postError);
+          setLoading(false);
+          return;
+        }
+
+        setPost(postData);
+
+        // Fetch author (with error handling)
+        try {
+          const { data: authorData, error: authorError } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', postData.user_id)
+            .single();
+
+          if (authorError) {
+            console.error('プロフィール取得エラー:', authorError);
+            // エラーがあってもクラッシュしないよう続行
+          } else {
+            setAuthor(authorData);
+          }
+        } catch (err) {
+          console.error('プロフィール取得中に例外が発生:', err);
+          // エラーを記録するだけで処理を続行
+        }
+
+        // Fetch comments with authors (with table existence check)
+        try {
+          // まずテーブルが存在するか確認
+          const { error: tableCheckError } = await supabase
+            .from('comments')
+            .select('count', { count: 'exact', head: true })
+            .limit(1);
+
+          if (!tableCheckError) {
+            // テーブルが存在する場合のみコメントを取得
+            const { data: commentsData, error: commentsError } = await supabase
+              .from('comments')
+              .select('*, user_id')
+              .eq('post_id', id)
+              .order('created_at', { ascending: false });
+
+            if (!commentsError && commentsData) {
+              // プロフィール情報を別途取得して結合
+              const commentsWithAuthors = await Promise.all(
+                commentsData.map(async (comment) => {
+                  try {
+                    const { data: profileData } = await supabase
+                      .from('profiles')
+                      .select('*')
+                      .eq('id', comment.user_id)
+                      .single();
+                    
+                    return {
+                      ...comment,
+                      author: profileData || { username: '匿名ユーザー' }
+                    };
+                  } catch (err) {
+                    return {
+                      ...comment,
+                      author: { username: '匿名ユーザー' }
+                    };
+                  }
+                })
+              );
+              
+              setComments(commentsWithAuthors);
+            } else {
+              console.log('コメントの取得に失敗またはコメントがありません:', commentsError);
+              setComments([]);
+            }
+          } else {
+            console.log('commentsテーブルが存在しない可能性があります:', tableCheckError);
+            setComments([]);
+          }
+        } catch (err) {
+          console.error('コメント取得中に例外が発生:', err);
+          setComments([]);
+        }
+
+        // Fetch votes count (with error handling)
+        try {
+          const { count: votesCountData, error: votesError } = await supabase
+            .from('votes')
+            .select('*', { count: 'exact', head: true })
+            .eq('post_id', id);
+
+          if (!votesError) {
+            setVotesCount(votesCountData || 0);
+          } else {
+            console.log('投票数の取得に失敗:', votesError);
+          }
+        } catch (err) {
+          console.error('投票数取得中に例外が発生:', err);
+        }
+
+        // Fetch likes count (with error handling)
+        try {
+          const { count: likesCountData, error: likesError } = await supabase
+            .from('likes')
+            .select('*', { count: 'exact', head: true })
+            .eq('post_id', id);
+
+          if (!likesError) {
+            setLikesCount(likesCountData || 0);
+          } else {
+            console.log('いいね数の取得に失敗:', likesError);
+          }
+        } catch (err) {
+          console.error('いいね数取得中に例外が発生:', err);
+        }
+
+        if (user) {
+          // Check if user has voted (with error handling)
+          try {
+            const { data: voteData, error: voteError } = await supabase
+              .from('votes')
+              .select('*')
+              .eq('post_id', id)
+              .eq('user_id', user.id)
+              .single();
+
+            if (!voteError) {
+              setHasVoted(!!voteData);
+            }
+          } catch (err) {
+            console.error('投票状態の確認中に例外が発生:', err);
+          }
+
+          // Check if user has liked (with error handling)
+          try {
+            const { data: likeData, error: likeError } = await supabase
+              .from('likes')
+              .select('*')
+              .eq('post_id', id)
+              .eq('user_id', user.id)
+              .single();
+
+            if (!likeError) {
+              setHasLiked(!!likeData);
+            }
+          } catch (err) {
+            console.error('いいね状態の確認中に例外が発生:', err);
+          }
+        }
+      } catch (err) {
+        console.error('データ取得中に予期しない例外が発生:', err);
+      } finally {
         setLoading(false);
-        return;
       }
-
-      setPost(postData);
-
-      // Fetch author
-      const { data: authorData } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', postData.user_id)
-        .single();
-
-      setAuthor(authorData);
-
-      // Fetch comments with authors
-      const { data: commentsData } = await supabase
-        .from('comments')
-        .select(`
-          *,
-          author:profiles(*)
-        `)
-        .eq('post_id', id)
-        .order('created_at', { ascending: false });
-
-      setComments(commentsData || []);
-
-      // Fetch votes count
-      const { count: votesCountData } = await supabase
-        .from('votes')
-        .select('*', { count: 'exact', head: true })
-        .eq('post_id', id);
-
-      setVotesCount(votesCountData || 0);
-
-      // Fetch likes count
-      const { count: likesCountData } = await supabase
-        .from('likes')
-        .select('*', { count: 'exact', head: true })
-        .eq('post_id', id);
-
-      setLikesCount(likesCountData || 0);
-
-      if (user) {
-        // Check if user has voted
-        const { data: voteData } = await supabase
-          .from('votes')
-          .select('*')
-          .eq('post_id', id)
-          .eq('user_id', user.id)
-          .single();
-
-        setHasVoted(!!voteData);
-
-        // Check if user has liked
-        const { data: likeData } = await supabase
-          .from('likes')
-          .select('*')
-          .eq('post_id', id)
-          .eq('user_id', user.id)
-          .single();
-
-        setHasLiked(!!likeData);
-      }
-
-      setLoading(false);
     }
 
     fetchPostData();
   }, [id, user]);
 
+  // コンテンツタイプを判定する関数
+  const getContentType = () => {
+    if (!post) return 'unknown';
+    
+    if (post.file_url) {
+      const videoExts = ['.mp4', '.webm', '.ogg', '.mov'];
+      const audioExts = ['.mp3', '.wav', '.ogg', '.m4a'];
+      const imageExts = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg'];
+      
+      if (videoExts.some(ext => post.file_url?.toLowerCase().endsWith(ext))) return 'video';
+      if (audioExts.some(ext => post.file_url?.toLowerCase().endsWith(ext))) return 'audio';
+      if (imageExts.some(ext => post.file_url?.toLowerCase().endsWith(ext))) return 'image';
+    }
+    
+    if (post.external_url) {
+      if (post.external_url.includes('youtube.com') || post.external_url.includes('youtu.be')) return 'youtube';
+      if (post.external_url.includes('vimeo.com')) return 'vimeo';
+      if (post.external_url.includes('nicovideo.jp')) return 'nicovideo';
+      if (post.external_url.includes('soundcloud.com')) return 'soundcloud';
+      if (post.external_url.includes('spotify.com')) return 'spotify';
+    }
+    
+    return 'unknown';
+  };
+
+  // YouTubeのビデオIDを取得
+  const getYoutubeVideoId = () => {
+    if (!post?.external_url) return null;
+    
+    const match = post.external_url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/);
+    return match && match[1] ? match[1] : null;
+  };
+
+  // ファイルのURLを取得
+  const getFileUrl = () => {
+    if (!post?.file_url) return '';
+    
+    // 改善された関数を使用
+    return getPublicFileUrl(STORAGE_BUCKET, post.file_url);
+  };
+
+  // 再生/一時停止の切り替え
+  const togglePlay = () => {
+    const contentType = getContentType();
+    
+    if (contentType === 'audio' && audioRef.current) {
+      if (isPlaying) {
+        audioRef.current.pause();
+      } else {
+        audioRef.current.play();
+      }
+      setIsPlaying(!isPlaying);
+    } else if (contentType === 'video' && videoRef.current) {
+      if (isPlaying) {
+        videoRef.current.pause();
+      } else {
+        videoRef.current.play();
+      }
+      setIsPlaying(!isPlaying);
+    }
+  };
+
+  // ミュート切り替え
+  const toggleMute = () => {
+    const contentType = getContentType();
+    
+    if (contentType === 'audio' && audioRef.current) {
+      audioRef.current.muted = !audioRef.current.muted;
+      setIsMuted(!isMuted);
+    } else if (contentType === 'video' && videoRef.current) {
+      videoRef.current.muted = !videoRef.current.muted;
+      setIsMuted(!isMuted);
+    }
+  };
+
   const handleComment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user || !newComment.trim()) return;
 
-    const { error } = await supabase
-      .from('comments')
-      .insert({
-        post_id: id,
-        user_id: user.id,
-        content: newComment.trim(),
-      });
-
-    if (!error) {
-      setNewComment('');
-      // Refresh comments
-      const { data } = await supabase
+    try {
+      const { error } = await supabase
         .from('comments')
-        .select(`
-          *,
-          author:profiles(*)
-        `)
-        .eq('post_id', id)
-        .order('created_at', { ascending: false });
+        .insert({
+          post_id: id,
+          user_id: user.id,
+          content: newComment.trim(),
+        });
 
-      setComments(data || []);
+      if (!error) {
+        setNewComment('');
+        // Refresh comments with error handling
+        try {
+          const { data, error: refreshError } = await supabase
+            .from('comments')
+            .select('*, user_id')
+            .eq('post_id', id)
+            .order('created_at', { ascending: false });
+
+          if (!refreshError && data) {
+            // プロフィール情報を別途取得して結合
+            const commentsWithAuthors = await Promise.all(
+              data.map(async (comment) => {
+                try {
+                  const { data: profileData } = await supabase
+                    .from('profiles')
+                    .select('*')
+                    .eq('id', comment.user_id)
+                    .single();
+                  
+                  return {
+                    ...comment,
+                    author: profileData || { username: '匿名ユーザー' }
+                  };
+                } catch (err) {
+                  return {
+                    ...comment,
+                    author: { username: '匿名ユーザー' }
+                  };
+                }
+              })
+            );
+            
+            setComments(commentsWithAuthors);
+          }
+        } catch (err) {
+          console.error('コメント更新中に例外が発生:', err);
+        }
+      } else {
+        console.error('コメント投稿エラー:', error);
+      }
+    } catch (err) {
+      console.error('コメント送信中に例外が発生:', err);
     }
   };
 
@@ -190,6 +385,169 @@ export function PostDetail() {
     }
   };
 
+  // コンテンツ表示部分
+  const renderContent = () => {
+    const contentType = getContentType();
+    
+    switch (contentType) {
+      case 'image':
+        return (
+          <div className="bg-gray-100 rounded-lg overflow-hidden">
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center justify-center bg-gray-200 text-gray-500">
+                <span className="text-4xl">🖼️</span>
+              </div>
+              <img 
+                src={getFileUrl()} 
+                alt={post?.title} 
+                className="relative z-10 w-full h-auto max-h-[600px] object-contain mx-auto"
+                onError={(e) => {
+                  console.error('画像読み込みエラー:', e);
+                  const target = e.target as HTMLImageElement;
+                  
+                  // 直接URLを試す最後の手段
+                  if (post?.file_url && !post.file_url.startsWith('http') && target.src !== post.file_url) {
+                    console.log('直接パスを試行:', post.file_url);
+                    target.src = post.file_url;
+                    return;
+                  }
+                  
+                  target.style.display = 'none';
+                }}
+              />
+            </div>
+          </div>
+        );
+        
+      case 'video':
+        return (
+          <div className="bg-black rounded-lg overflow-hidden relative">
+            <div className="absolute inset-0 flex items-center justify-center bg-gray-800 text-gray-300">
+              <span className="text-4xl">🎬</span>
+            </div>
+            <video 
+              ref={videoRef}
+              src={getFileUrl()} 
+              className="relative z-10 w-full h-auto max-h-[600px]"
+              controls
+              onPlay={() => setIsPlaying(true)}
+              onPause={() => setIsPlaying(false)}
+              onError={(e) => {
+                console.error('動画読み込みエラー:', e);
+                const target = e.target as HTMLVideoElement;
+                target.style.display = 'none';
+              }}
+            />
+            <div className="absolute bottom-4 left-4 flex space-x-2 z-20">
+              <button 
+                onClick={togglePlay}
+                className="bg-black bg-opacity-70 text-white p-2 rounded-full"
+              >
+                {isPlaying ? <Pause size={16} /> : <Play size={16} />}
+              </button>
+              <button 
+                onClick={toggleMute}
+                className="bg-black bg-opacity-70 text-white p-2 rounded-full"
+              >
+                {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
+              </button>
+            </div>
+          </div>
+        );
+        
+      case 'audio':
+        return (
+          <div className="bg-gray-100 rounded-lg p-4">
+            <div className="flex items-center space-x-4">
+              <button 
+                onClick={togglePlay}
+                className="bg-blue-500 text-white p-3 rounded-full"
+              >
+                {isPlaying ? <Pause size={24} /> : <Play size={24} />}
+              </button>
+              <div className="flex-1">
+                <h3 className="font-medium">{post?.title}</h3>
+                <p className="text-sm text-gray-500">{post?.description}</p>
+              </div>
+              <button 
+                onClick={toggleMute}
+                className="text-gray-700 p-2 rounded-full"
+              >
+                {isMuted ? <VolumeX size={20} /> : <Volume2 size={20} />}
+              </button>
+            </div>
+            <audio 
+              ref={audioRef}
+              src={getFileUrl()} 
+              className="w-full mt-4" 
+              controls
+              onPlay={() => setIsPlaying(true)}
+              onPause={() => setIsPlaying(false)}
+              onError={(e) => {
+                console.error('音声読み込みエラー:', e);
+                const target = e.target as HTMLAudioElement;
+                const audioContainer = target.parentElement;
+                if (audioContainer) {
+                  audioContainer.innerHTML = '<p class="text-center text-red-500 my-2">音声ファイルを読み込めませんでした</p>';
+                }
+              }}
+            />
+          </div>
+        );
+        
+      case 'youtube':
+        const videoId = getYoutubeVideoId();
+        return videoId ? (
+          <div className="aspect-video rounded-lg overflow-hidden">
+            <iframe
+              width="100%"
+              height="100%"
+              src={`https://www.youtube.com/embed/${videoId}`}
+              title={post?.title}
+              frameBorder="0"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              allowFullScreen
+            ></iframe>
+          </div>
+        ) : (
+          <div className="bg-gray-100 rounded-lg p-4 text-center">
+            <p>YouTubeビデオを読み込めませんでした</p>
+            {post?.external_url && (
+              <a 
+                href={post.external_url} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="text-blue-500 flex items-center justify-center mt-2"
+              >
+                <ExternalLink size={16} className="mr-1" /> 直接リンクを開く
+              </a>
+            )}
+          </div>
+        );
+        
+      default:
+        return (
+          <div className="bg-gray-100 rounded-lg p-4">
+            {post?.external_url ? (
+              <div className="text-center">
+                <p className="mb-2">外部コンテンツへのリンク</p>
+                <a 
+                  href={post.external_url} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="text-blue-500 flex items-center justify-center"
+                >
+                  <ExternalLink size={16} className="mr-1" /> 外部リンクを開く
+                </a>
+              </div>
+            ) : (
+              <p className="text-center">{post?.description || 'コンテンツがありません'}</p>
+            )}
+          </div>
+        );
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[50vh]">
@@ -198,7 +556,7 @@ export function PostDetail() {
     );
   }
 
-  if (!post || !author) {
+  if (!post) {
     return (
       <div className="text-center py-12">
         <p className="text-gray-600">Post not found</p>
@@ -208,143 +566,106 @@ export function PostDetail() {
 
   return (
     <div className="max-w-4xl mx-auto">
+      <div className="mb-4">
+        <Link to="/" className="inline-flex items-center text-blue-600 hover:text-blue-800">
+          <ArrowLeft size={16} className="mr-1" /> 戻る
+        </Link>
+      </div>
+      
       <div className="bg-white rounded-lg shadow-md overflow-hidden">
         <div className="p-6">
-          <h1 className="text-3xl font-bold mb-4">{post.title}</h1>
-          
-          <div className="flex items-center space-x-4 mb-6">
-            <div className="flex items-center space-x-2">
-              {author.avatar_url && (
-                <img
-                  src={author.avatar_url}
-                  alt={author.username}
-                  className="w-8 h-8 rounded-full"
-                />
-              )}
-              <span className="font-medium">{author.username}</span>
-            </div>
-            <span className="text-gray-500">
+          <div className="flex items-center justify-between mb-4">
+            <h1 className="text-2xl font-bold">{post.title}</h1>
+            <span className="text-sm text-gray-500">
               {new Date(post.created_at).toLocaleDateString()}
             </span>
           </div>
 
-          {post.description && (
-            <p className="text-gray-700 mb-6 whitespace-pre-wrap">{post.description}</p>
-          )}
+          {renderContent()}
 
-          {post.file_url && (
-            <div className="mb-6">
-              {post.category === 'character' && (
-                <img
-                  src={post.file_url}
-                  alt={post.title}
-                  className="max-w-full rounded-lg"
-                />
-              )}
-              {post.category === 'music' && (
-                <audio
-                  src={post.file_url}
-                  controls
-                  className="w-full"
-                />
-              )}
-              {post.category === 'video' && (
-                <video
-                  src={post.file_url}
-                  controls
-                  className="w-full rounded-lg"
-                />
-              )}
-            </div>
-          )}
+          <div className="mt-6">
+            {post.description && (
+              <div className="bg-gray-50 p-4 rounded-lg mb-6">
+                <h3 className="text-lg font-medium mb-2">説明</h3>
+                <p className="text-gray-700 whitespace-pre-wrap">{post.description}</p>
+              </div>
+            )}
+          </div>
 
-          {post.external_url && (
-            <div className="mb-6">
-              <a
-                href={post.external_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-blue-600 hover:text-blue-800"
-              >
-                View External Content
-              </a>
-            </div>
-          )}
-
-          <div className="flex items-center space-x-6 border-t border-gray-200 pt-6">
+          <div className="flex items-center space-x-6 border-t border-gray-200 pt-6 mt-6">
             <button
               onClick={handleVote}
-              className={`flex items-center space-x-2 ${
-                hasVoted ? 'text-blue-600' : 'text-gray-600'
-              } hover:text-blue-800`}
+              className={`flex items-center space-x-1 ${
+                hasVoted ? 'text-green-600' : 'text-gray-600 hover:text-green-600'
+              }`}
             >
               <Vote size={20} />
-              <span>{votesCount} votes</span>
+              <span>{votesCount}</span>
             </button>
-
             <button
               onClick={handleLike}
-              className={`flex items-center space-x-2 ${
-                hasLiked ? 'text-red-600' : 'text-gray-600'
-              } hover:text-red-800`}
+              className={`flex items-center space-x-1 ${
+                hasLiked ? 'text-red-600' : 'text-gray-600 hover:text-red-600'
+              }`}
             >
               <ThumbsUp size={20} />
-              <span>{likesCount} likes</span>
+              <span>{likesCount}</span>
             </button>
-
-            <div className="flex items-center space-x-2 text-gray-600">
+            <div className="flex items-center space-x-1 text-gray-600">
               <MessageSquare size={20} />
-              <span>{comments.length} comments</span>
+              <span>{comments.length}</span>
             </div>
           </div>
         </div>
-      </div>
 
-      <div className="mt-8">
-        <h2 className="text-2xl font-bold mb-4">Comments</h2>
-
-        {user ? (
-          <form onSubmit={handleComment} className="mb-8">
+        <div className="border-t border-gray-200 p-6">
+          <h2 className="text-xl font-semibold mb-4">コメント</h2>
+          
+          <form onSubmit={handleComment} className="mb-6">
             <textarea
               value={newComment}
               onChange={(e) => setNewComment(e.target.value)}
-              placeholder="Add a comment..."
-              className="w-full p-4 rounded-lg border border-gray-300 focus:border-blue-500 focus:ring focus:ring-blue-200"
+              placeholder="コメントを入力..."
+              className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               rows={3}
             />
             <button
               type="submit"
-              disabled={!newComment.trim()}
-              className="mt-2 bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50"
+              disabled={!user || !newComment.trim()}
+              className="mt-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400"
             >
-              Post Comment
+              コメントする
             </button>
           </form>
-        ) : (
-          <p className="text-gray-600 mb-8">Please sign in to comment.</p>
-        )}
 
-        <div className="space-y-6">
-          {comments.map((comment) => (
-            <div key={comment.id} className="bg-white rounded-lg shadow-md p-6">
-              <div className="flex items-center space-x-4 mb-4">
-                {comment.author.avatar_url && (
-                  <img
-                    src={comment.author.avatar_url}
-                    alt={comment.author.username}
-                    className="w-8 h-8 rounded-full"
-                  />
-                )}
-                <div>
-                  <div className="font-medium">{comment.author.username}</div>
-                  <div className="text-sm text-gray-500">
-                    {new Date(comment.created_at).toLocaleDateString()}
+          {comments.length === 0 ? (
+            <p className="text-gray-500 text-center py-4">コメントはまだありません</p>
+          ) : (
+            <div className="space-y-4">
+              {comments.map((comment) => (
+                <div key={comment.id} className="bg-gray-50 p-4 rounded-lg">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center">
+                      {comment.author?.avatar_url ? (
+                        <img
+                          src={comment.author.avatar_url}
+                          alt={comment.author.username}
+                          className="w-8 h-8 rounded-full mr-2"
+                        />
+                      ) : (
+                        <div className="w-8 h-8 bg-gray-300 rounded-full mr-2" />
+                      )}
+                      <span className="font-medium">{comment.author?.username || 'Anonymous'}</span>
+                    </div>
+                    <span className="text-xs text-gray-500">
+                      {new Date(comment.created_at).toLocaleDateString()}
+                    </span>
                   </div>
+                  <p className="text-gray-700 whitespace-pre-wrap">{comment.content}</p>
                 </div>
-              </div>
-              <p className="text-gray-700 whitespace-pre-wrap">{comment.content}</p>
+              ))}
             </div>
-          ))}
+          )}
         </div>
       </div>
     </div>
