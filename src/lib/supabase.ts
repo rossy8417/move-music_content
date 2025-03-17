@@ -21,7 +21,18 @@ export function getPublicFileUrl(bucket: string, path: string): string {
     
     if (!data || !data.publicUrl) {
       console.error('公開URL生成失敗:', { bucket, path, cleanPath });
-      return '';
+      
+      // 代替方法を試す
+      try {
+        // バケット名とパスを直接結合してURLを作成
+        const baseStorageUrl = supabaseUrl.replace('.supabase.co', '.supabase.co/storage/v1/object/public');
+        const directUrl = `${baseStorageUrl}/${bucket}/${cleanPath}`;
+        console.log('代替URL生成方法:', directUrl);
+        return directUrl;
+      } catch (err) {
+        console.error('代替URL生成エラー:', err);
+        return '';
+      }
     }
     
     console.log('公開URL生成成功:', { 
@@ -34,7 +45,21 @@ export function getPublicFileUrl(bucket: string, path: string): string {
     return data.publicUrl;
   } catch (error) {
     console.error('公開URL生成エラー:', { bucket, path, error });
-    return '';
+    
+    // エラー時は代替方法を試す
+    try {
+      // パスの先頭のスラッシュを削除（Supabaseの仕様）
+      const cleanPath = path.startsWith('/') ? path.substring(1) : path;
+      
+      // バケット名とパスを直接結合してURLを作成
+      const baseStorageUrl = supabaseUrl.replace('.supabase.co', '.supabase.co/storage/v1/object/public');
+      const directUrl = `${baseStorageUrl}/${bucket}/${cleanPath}`;
+      console.log('例外発生時の代替URL生成:', directUrl);
+      return directUrl;
+    } catch (err) {
+      console.error('代替URL生成エラー:', err);
+      return '';
+    }
   }
 }
 
@@ -44,7 +69,7 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 // 開発サーバーのベースURL
 export const BASE_URL = import.meta.env.DEV 
-  ? window.location.protocol + '//' + window.location.hostname + ':5173'
+  ? window.location.protocol + '//' + window.location.hostname + ':' + window.location.port
   : window.location.origin;
 
 // 環境変数のチェック
@@ -53,7 +78,8 @@ console.log('環境変数チェック:', {
   SUPABASE_URL: supabaseUrl,
   SUPABASE_ANON_KEY_EXISTS: !!supabaseAnonKey,
   SUPABASE_ANON_KEY_PREFIX: supabaseAnonKey ? supabaseAnonKey.substring(0, 10) + '...' : 'なし',
-  BASE_URL: BASE_URL
+  BASE_URL: BASE_URL,
+  CURRENT_PORT: window.location.port || '(デフォルト)'
 });
 
 if (!supabaseUrl || !supabaseAnonKey) {

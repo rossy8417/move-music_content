@@ -36,34 +36,34 @@ export function PostDetail() {
       setLoading(true);
       
       try {
-        // Fetch post
-        const { data: postData, error: postError } = await supabase
-          .from('posts')
-          .select('*')
-          .eq('id', id)
-          .single();
+      // Fetch post
+      const { data: postData, error: postError } = await supabase
+        .from('posts')
+        .select('*')
+        .eq('id', id)
+        .single();
 
-        if (postError) {
-          console.error('Error fetching post:', postError);
-          setLoading(false);
-          return;
-        }
+      if (postError) {
+        console.error('Error fetching post:', postError);
+        setLoading(false);
+        return;
+      }
 
-        setPost(postData);
+      setPost(postData);
 
         // Fetch author (with error handling)
         try {
           const { data: authorData, error: authorError } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', postData.user_id)
-            .single();
+        .from('profiles')
+        .select('*')
+        .eq('id', postData.user_id)
+        .single();
 
           if (authorError) {
             console.error('プロフィール取得エラー:', authorError);
             // エラーがあってもクラッシュしないよう続行
           } else {
-            setAuthor(authorData);
+      setAuthor(authorData);
           }
         } catch (err) {
           console.error('プロフィール取得中に例外が発生:', err);
@@ -81,10 +81,10 @@ export function PostDetail() {
           if (!tableCheckError) {
             // テーブルが存在する場合のみコメントを取得
             const { data: commentsData, error: commentsError } = await supabase
-              .from('comments')
+        .from('comments')
               .select('*, user_id')
-              .eq('post_id', id)
-              .order('created_at', { ascending: false });
+        .eq('post_id', id)
+        .order('created_at', { ascending: false });
 
             if (!commentsError && commentsData) {
               // プロフィール情報を別途取得して結合
@@ -127,12 +127,12 @@ export function PostDetail() {
         // Fetch votes count (with error handling)
         try {
           const { count: votesCountData, error: votesError } = await supabase
-            .from('votes')
-            .select('*', { count: 'exact', head: true })
-            .eq('post_id', id);
+        .from('votes')
+        .select('*', { count: 'exact', head: true })
+        .eq('post_id', id);
 
           if (!votesError) {
-            setVotesCount(votesCountData || 0);
+      setVotesCount(votesCountData || 0);
           } else {
             console.log('投票数の取得に失敗:', votesError);
           }
@@ -143,12 +143,12 @@ export function PostDetail() {
         // Fetch likes count (with error handling)
         try {
           const { count: likesCountData, error: likesError } = await supabase
-            .from('likes')
-            .select('*', { count: 'exact', head: true })
-            .eq('post_id', id);
+        .from('likes')
+        .select('*', { count: 'exact', head: true })
+        .eq('post_id', id);
 
           if (!likesError) {
-            setLikesCount(likesCountData || 0);
+      setLikesCount(likesCountData || 0);
           } else {
             console.log('いいね数の取得に失敗:', likesError);
           }
@@ -159,14 +159,14 @@ export function PostDetail() {
         // Check if current user has voted
         try {
           const { data: voteData, error: voteError } = await supabase
-            .from('votes')
-            .select('*')
-            .eq('post_id', id)
+          .from('votes')
+          .select('*')
+          .eq('post_id', id)
             .eq('user_id', currentUserId)
-            .single();
+          .single();
 
           if (!voteError) {
-            setHasVoted(!!voteData);
+        setHasVoted(!!voteData);
           }
         } catch (err) {
           console.error('投票状態の確認中に例外が発生:', err);
@@ -175,14 +175,14 @@ export function PostDetail() {
         // Check if current user has liked
         try {
           const { data: likeData, error: likeError } = await supabase
-            .from('likes')
-            .select('*')
-            .eq('post_id', id)
+          .from('likes')
+          .select('*')
+          .eq('post_id', id)
             .eq('user_id', currentUserId)
-            .single();
+          .single();
 
           if (!likeError) {
-            setHasLiked(!!likeData);
+        setHasLiked(!!likeData);
           }
         } catch (err) {
           console.error('いいね状態の確認中に例外が発生:', err);
@@ -234,8 +234,51 @@ export function PostDetail() {
   const getFileUrl = () => {
     if (!post?.file_url) return '';
     
-    // 改善された関数を使用
-    return getPublicFileUrl(STORAGE_BUCKET, post.file_url);
+    // 直接URLの場合はそのまま返す
+    if (post.file_url.startsWith('http')) {
+      console.log('直接URL使用:', post.file_url);
+      return post.file_url;
+    }
+    
+    try {
+      // 改善された関数を使用
+      const url = getPublicFileUrl(STORAGE_BUCKET, post.file_url);
+      console.log('公開URL生成成功:', url);
+      return url;
+    } catch (error) {
+      console.error('ファイルURL生成エラー:', error);
+      
+      // エラー時は別の方法を試す
+      try {
+        // パスの先頭のスラッシュを削除（Supabaseの仕様）
+        const cleanPath = post.file_url.startsWith('/') ? post.file_url.substring(1) : post.file_url;
+        
+        // 方法1: getPublicUrl APIを使用
+        try {
+          const publicUrl = `${supabase.storage.from(STORAGE_BUCKET).getPublicUrl(cleanPath).data.publicUrl}`;
+          console.log('代替URL生成1:', publicUrl);
+          return publicUrl;
+        } catch (err) {
+          console.error('代替URL生成1エラー:', err);
+        }
+        
+        // 方法2: 直接URLを構築
+        try {
+          const baseStorageUrl = import.meta.env.VITE_SUPABASE_URL.replace('.supabase.co', '.supabase.co/storage/v1/object/public');
+          const directUrl = `${baseStorageUrl}/${STORAGE_BUCKET}/${cleanPath}`;
+          console.log('代替URL生成2:', directUrl);
+          return directUrl;
+        } catch (err) {
+          console.error('代替URL生成2エラー:', err);
+        }
+        
+        // 方法3: 相対パスを試す
+        return post.file_url;
+      } catch (err) {
+        console.error('代替URL生成エラー:', err);
+        return '';
+      }
+    }
   };
 
   // 再生/一時停止の切り替え
@@ -276,27 +319,27 @@ export function PostDetail() {
   const handleComment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newComment.trim()) return;
-    
+
     setActionError(null);
 
     try {
-      const { error } = await supabase
-        .from('comments')
-        .insert({
-          post_id: id,
+    const { error } = await supabase
+      .from('comments')
+      .insert({
+        post_id: id,
           user_id: currentUserId,
-          content: newComment.trim(),
-        });
+        content: newComment.trim(),
+      });
 
-      if (!error) {
-        setNewComment('');
+    if (!error) {
+      setNewComment('');
         // Refresh comments with error handling
         try {
           const { data, error: refreshError } = await supabase
-            .from('comments')
+        .from('comments')
             .select('*, user_id')
-            .eq('post_id', id)
-            .order('created_at', { ascending: false });
+        .eq('post_id', id)
+        .order('created_at', { ascending: false });
 
           if (!refreshError && data) {
             // プロフィール情報を別途取得して結合
@@ -340,35 +383,35 @@ export function PostDetail() {
   // 投票処理
   const handleVote = async () => {
     if (!id) return;
-    
+
     setActionError(null);
 
     try {
-      if (hasVoted) {
-        const { error } = await supabase
-          .from('votes')
-          .delete()
-          .eq('post_id', id)
+    if (hasVoted) {
+      const { error } = await supabase
+        .from('votes')
+        .delete()
+        .eq('post_id', id)
           .eq('user_id', currentUserId);
 
-        if (!error) {
-          setHasVoted(false);
-          setVotesCount(prev => prev - 1);
+      if (!error) {
+        setHasVoted(false);
+        setVotesCount(prev => prev - 1);
         } else {
           console.error('投票削除エラー:', error);
           setActionError('投票の取り消しに失敗しました。');
-        }
-      } else {
-        const { error } = await supabase
-          .from('votes')
-          .insert({
-            post_id: id,
+      }
+    } else {
+      const { error } = await supabase
+        .from('votes')
+        .insert({
+          post_id: id,
             user_id: currentUserId,
-          });
+        });
 
-        if (!error) {
-          setHasVoted(true);
-          setVotesCount(prev => prev + 1);
+      if (!error) {
+        setHasVoted(true);
+        setVotesCount(prev => prev + 1);
         } else {
           console.error('投票エラー:', error);
           setActionError('投票に失敗しました。テーブルが存在するか確認してください。');
@@ -383,35 +426,35 @@ export function PostDetail() {
   // いいね処理
   const handleLike = async () => {
     if (!id) return;
-    
+
     setActionError(null);
 
     try {
-      if (hasLiked) {
-        const { error } = await supabase
-          .from('likes')
-          .delete()
-          .eq('post_id', id)
+    if (hasLiked) {
+      const { error } = await supabase
+        .from('likes')
+        .delete()
+        .eq('post_id', id)
           .eq('user_id', currentUserId);
 
-        if (!error) {
-          setHasLiked(false);
-          setLikesCount(prev => prev - 1);
+      if (!error) {
+        setHasLiked(false);
+        setLikesCount(prev => prev - 1);
         } else {
           console.error('いいね削除エラー:', error);
           setActionError('いいねの取り消しに失敗しました。');
-        }
-      } else {
-        const { error } = await supabase
-          .from('likes')
-          .insert({
-            post_id: id,
+      }
+    } else {
+      const { error } = await supabase
+        .from('likes')
+        .insert({
+          post_id: id,
             user_id: currentUserId,
-          });
+        });
 
-        if (!error) {
-          setHasLiked(true);
-          setLikesCount(prev => prev + 1);
+      if (!error) {
+        setHasLiked(true);
+        setLikesCount(prev => prev + 1);
         } else {
           console.error('いいねエラー:', error);
           setActionError('いいねに失敗しました。テーブルが存在するか確認してください。');
@@ -443,6 +486,44 @@ export function PostDetail() {
                   console.error('画像読み込みエラー:', e);
                   const target = e.target as HTMLImageElement;
                   
+                  // 別の方法でURLを生成してみる
+                  try {
+                    if (post?.file_url) {
+                      // 方法1: getPublicUrl APIを使用
+                      try {
+                        // パスの先頭のスラッシュを削除（Supabaseの仕様）
+                        const cleanPath = post.file_url.startsWith('/') ? post.file_url.substring(1) : post.file_url;
+                        const publicUrl = `${supabase.storage.from(STORAGE_BUCKET).getPublicUrl(cleanPath).data.publicUrl}`;
+                        console.log('代替URL生成1:', publicUrl);
+                        
+                        // 現在のURLと異なる場合のみ設定
+                        if (target.src !== publicUrl) {
+                          target.src = publicUrl;
+                          return;
+                        }
+                      } catch (err) {
+                        console.error('代替URL生成1エラー:', err);
+                      }
+                      
+                      // 方法2: 直接URLを構築
+                      try {
+                        const cleanPath = post.file_url.startsWith('/') ? post.file_url.substring(1) : post.file_url;
+                        const baseStorageUrl = import.meta.env.VITE_SUPABASE_URL.replace('.supabase.co', '.supabase.co/storage/v1/object/public');
+                        const directUrl = `${baseStorageUrl}/${STORAGE_BUCKET}/${cleanPath}`;
+                        console.log('代替URL生成2:', directUrl);
+                        
+                        if (target.src !== directUrl) {
+                          target.src = directUrl;
+                          return;
+                        }
+                      } catch (err) {
+                        console.error('代替URL生成2エラー:', err);
+                      }
+                    }
+                  } catch (err) {
+                    console.error('代替URL生成エラー:', err);
+                  }
+                  
                   // 直接URLを試す最後の手段
                   if (post?.file_url && !post.file_url.startsWith('http') && target.src !== post.file_url) {
                     console.log('直接パスを試行:', post.file_url);
@@ -450,6 +531,7 @@ export function PostDetail() {
                     return;
                   }
                   
+                  // それでもダメなら画像を非表示にして背景を表示
                   target.style.display = 'none';
                 }}
               />
@@ -473,6 +555,52 @@ export function PostDetail() {
               onError={(e) => {
                 console.error('動画読み込みエラー:', e);
                 const target = e.target as HTMLVideoElement;
+                
+                // 別の方法でURLを生成してみる
+                try {
+                  if (post?.file_url) {
+                    // 方法1: getPublicUrl APIを使用
+                    try {
+                      // パスの先頭のスラッシュを削除（Supabaseの仕様）
+                      const cleanPath = post.file_url.startsWith('/') ? post.file_url.substring(1) : post.file_url;
+                      const publicUrl = `${supabase.storage.from(STORAGE_BUCKET).getPublicUrl(cleanPath).data.publicUrl}`;
+                      console.log('代替URL生成1:', publicUrl);
+                      
+                      // 現在のURLと異なる場合のみ設定
+                      if (target.src !== publicUrl) {
+                        target.src = publicUrl;
+                        return;
+                      }
+                    } catch (err) {
+                      console.error('代替URL生成1エラー:', err);
+                    }
+                    
+                    // 方法2: 直接URLを構築
+                    try {
+                      const cleanPath = post.file_url.startsWith('/') ? post.file_url.substring(1) : post.file_url;
+                      const baseStorageUrl = import.meta.env.VITE_SUPABASE_URL.replace('.supabase.co', '.supabase.co/storage/v1/object/public');
+                      const directUrl = `${baseStorageUrl}/${STORAGE_BUCKET}/${cleanPath}`;
+                      console.log('代替URL生成2:', directUrl);
+                      
+                      if (target.src !== directUrl) {
+                        target.src = directUrl;
+                        return;
+                      }
+                    } catch (err) {
+                      console.error('代替URL生成2エラー:', err);
+                    }
+                  }
+                } catch (err) {
+                  console.error('代替URL生成エラー:', err);
+                }
+                
+                // 直接URLを試す最後の手段
+                if (post?.file_url && !post.file_url.startsWith('http') && target.src !== post.file_url) {
+                  console.log('直接パスを試行:', post.file_url);
+                  target.src = post.file_url;
+                  return;
+                }
+                
                 target.style.display = 'none';
               }}
             />
@@ -524,6 +652,57 @@ export function PostDetail() {
               onError={(e) => {
                 console.error('音声読み込みエラー:', e);
                 const target = e.target as HTMLAudioElement;
+                
+                // 別の方法でURLを生成してみる
+                try {
+                  if (post?.file_url) {
+                    // 方法1: getPublicUrl APIを使用
+                    try {
+                      // パスの先頭のスラッシュを削除（Supabaseの仕様）
+                      const cleanPath = post.file_url.startsWith('/') ? post.file_url.substring(1) : post.file_url;
+                      const publicUrl = `${supabase.storage.from(STORAGE_BUCKET).getPublicUrl(cleanPath).data.publicUrl}`;
+                      console.log('代替URL生成1:', publicUrl);
+                      
+                      // 現在のURLと異なる場合のみ設定
+                      if (target.src !== publicUrl) {
+                        target.src = publicUrl;
+                        // 再生を試みる
+                        target.load();
+                        return;
+                      }
+                    } catch (err) {
+                      console.error('代替URL生成1エラー:', err);
+                    }
+                    
+                    // 方法2: 直接URLを構築
+                    try {
+                      const cleanPath = post.file_url.startsWith('/') ? post.file_url.substring(1) : post.file_url;
+                      const baseStorageUrl = import.meta.env.VITE_SUPABASE_URL.replace('.supabase.co', '.supabase.co/storage/v1/object/public');
+                      const directUrl = `${baseStorageUrl}/${STORAGE_BUCKET}/${cleanPath}`;
+                      console.log('代替URL生成2:', directUrl);
+                      
+                      if (target.src !== directUrl) {
+                        target.src = directUrl;
+                        target.load();
+                        return;
+                      }
+                    } catch (err) {
+                      console.error('代替URL生成2エラー:', err);
+                    }
+                  }
+                } catch (err) {
+                  console.error('代替URL生成エラー:', err);
+                }
+                
+                // 直接URLを試す最後の手段
+                if (post?.file_url && !post.file_url.startsWith('http') && target.src !== post.file_url) {
+                  console.log('直接パスを試行:', post.file_url);
+                  target.src = post.file_url;
+                  target.load();
+                  return;
+                }
+                
+                // それでもダメならエラーメッセージを表示
                 const audioContainer = target.parentElement;
                 if (audioContainer) {
                   audioContainer.innerHTML = '<p class="text-center text-red-500 my-2">音声ファイルを読み込めませんでした</p>';
@@ -622,13 +801,13 @@ export function PostDetail() {
           {renderContent()}
 
           <div className="mt-6">
-            {post.description && (
+          {post.description && (
               <div className="bg-gray-50 p-4 rounded-lg mb-6">
                 <h3 className="text-lg font-medium mb-2">説明</h3>
                 <p className="text-gray-700 whitespace-pre-wrap">{post.description}</p>
               </div>
-            )}
-          </div>
+              )}
+            </div>
 
           {actionError && (
             <div className="bg-red-50 border border-red-200 text-red-600 p-3 rounded-lg mb-4">
@@ -658,13 +837,13 @@ export function PostDetail() {
             <div className="flex items-center space-x-1 text-gray-600">
               <MessageSquare size={20} />
               <span>{comments.length}</span>
-            </div>
           </div>
         </div>
+      </div>
 
         <div className="border-t border-gray-200 p-6">
           <h2 className="text-xl font-semibold mb-4">コメント</h2>
-          
+
           <form onSubmit={handleComment} className="mb-6">
             <textarea
               value={newComment}
@@ -684,16 +863,16 @@ export function PostDetail() {
 
           {comments.length === 0 ? (
             <p className="text-gray-500 text-center py-4">コメントはまだありません</p>
-          ) : (
+        ) : (
             <div className="space-y-4">
-              {comments.map((comment) => (
+          {comments.map((comment) => (
                 <div key={comment.id} className="bg-gray-50 p-4 rounded-lg">
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center">
                       {comment.author?.avatar_url ? (
-                        <img
-                          src={comment.author.avatar_url}
-                          alt={comment.author.username}
+                  <img
+                    src={comment.author.avatar_url}
+                    alt={comment.author.username}
                           className="w-8 h-8 rounded-full mr-2"
                         />
                       ) : (
@@ -702,7 +881,7 @@ export function PostDetail() {
                       <span className="font-medium">{comment.author?.username || '匿名ユーザー'}</span>
                     </div>
                     <span className="text-xs text-gray-500">
-                      {new Date(comment.created_at).toLocaleDateString()}
+                    {new Date(comment.created_at).toLocaleDateString()}
                     </span>
                   </div>
                   <p className="text-gray-700 whitespace-pre-wrap">{comment.content}</p>

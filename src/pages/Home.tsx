@@ -53,29 +53,102 @@ export function Home() {
   // ファイルのサムネイルURLを取得する関数
   const getThumbnailUrl = (post: any): string => {
     try {
-      if (!post.file_url) return '';
+      // 1. サムネイル専用フィールドがあれば優先的に使用
+      if (post.thumbnail_url) {
+        return post.thumbnail_url;
+      }
       
-      // 画像ファイルかどうかを確認
-      const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(post.file_url);
-      
-      if (isImage) {
-        // 新しいgetPublicFileUrl関数を使用
-        try {
-          const url = getPublicFileUrl(STORAGE_BUCKET, post.file_url);
-          console.log(`生成されたURL: ${url}`);
-          return url;
-        } catch (error) {
-          console.error('サムネイルURL生成エラー:', error);
+      // 2. 外部URLからサムネイルを取得（YouTube、Vimeoなど）
+      if (post.external_url) {
+        // YouTubeのサムネイル取得
+        if (post.external_url.includes('youtube.com') || post.external_url.includes('youtu.be')) {
+          const videoId = getYoutubeVideoId(post.external_url);
+          if (videoId) {
+            // 高品質サムネイル
+            return `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
+          }
+        }
+        
+        // Vimeoのサムネイル取得（APIが必要なため簡易版）
+        if (post.external_url.includes('vimeo.com')) {
+          // Vimeoのサムネイルは直接取得できないため、プレースホルダーを返す
           return '';
         }
-      } else {
-        // 画像以外のファイルの場合はカテゴリアイコンを表示
+        
+        // ニコニコ動画のサムネイル取得
+        if (post.external_url.includes('nicovideo.jp')) {
+          const match = post.external_url.match(/watch\/([^/?]+)/);
+          if (match && match[1]) {
+            return `https://nicovideo.cdn.nimg.jp/thumbnails/${match[1]}/${match[1]}.L`;
+          }
+        }
+      }
+      
+      // 3. ファイルURLがなければ空を返す
+      if (!post.file_url) return '';
+      
+      // 4. 画像ファイルかどうかを確認（音声や動画ファイルはサムネイルとして使用しない）
+      const imageExts = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg'];
+      const isImageFile = imageExts.some(ext => post.file_url.toLowerCase().endsWith(ext));
+      
+      // 画像ファイルでない場合は空文字を返す
+      if (!isImageFile) {
         return '';
       }
+      
+      // 5. 直接URLの場合はそのまま返す
+      if (post.file_url.startsWith('http')) {
+        console.log('直接URL使用:', post.file_url);
+        return post.file_url;
+      }
+      
+      // 6. Supabaseのストレージから取得
+      // パスの先頭のスラッシュを削除（Supabaseの仕様）
+      const cleanPath = post.file_url.startsWith('/') ? post.file_url.substring(1) : post.file_url;
+      
+      // 方法1: 改善されたgetPublicFileUrl関数を使用
+      try {
+        const url = getPublicFileUrl(STORAGE_BUCKET, post.file_url);
+        console.log(`生成されたURL (方法1): ${url}`);
+        if (url) return url;
+      } catch (error) {
+        console.error('サムネイルURL生成エラー (方法1):', error);
+      }
+      
+      // 方法2: getPublicUrl APIを直接使用
+      try {
+        const publicUrl = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(cleanPath).data.publicUrl;
+        console.log(`生成されたURL (方法2): ${publicUrl}`);
+        if (publicUrl) return publicUrl;
+      } catch (error) {
+        console.error('サムネイルURL生成エラー (方法2):', error);
+      }
+      
+      // 方法3: 直接URLを構築
+      try {
+        const baseStorageUrl = import.meta.env.VITE_SUPABASE_URL.replace('.supabase.co', '.supabase.co/storage/v1/object/public');
+        const directUrl = `${baseStorageUrl}/${STORAGE_BUCKET}/${cleanPath}`;
+        console.log(`生成されたURL (方法3): ${directUrl}`);
+        return directUrl;
+      } catch (error) {
+        console.error('サムネイルURL生成エラー (方法3):', error);
+      }
+      
+      // すべての方法が失敗した場合は空文字を返す
+      return '';
     } catch (error) {
       console.error('サムネイル処理エラー:', error);
       return '';
     }
+  };
+
+  // YouTubeのビデオIDを取得する関数
+  const getYoutubeVideoId = (url: string): string | null => {
+    if (!url) return null;
+    
+    // YouTube URLからビデオIDを抽出する正規表現
+    const match = url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/);
+    return match && match[1] ? match[1] : null;
   };
 
   // コンテンツタイプを判定する関数
@@ -139,25 +212,98 @@ export function Home() {
                   >
                     {icon}
                   </div>
-                  <img 
-                    src={getThumbnailUrl(post)} 
-                    alt={post.title}
-                    className="relative z-10 w-full h-full object-cover"
-                    onError={(e) => {
-                      console.error('画像読み込みエラー:', e);
-                      const target = e.target as HTMLImageElement;
-                      
-                      // ファイルURLが直接アクセス可能かチェック
-                      if (post.file_url && post.file_url.startsWith('http')) {
-                        console.log('直接URLを試行:', post.file_url);
-                        target.src = post.file_url;
-                        return;
-                      }
-                      
-                      // それでもダメなら画像を非表示にして背景を表示
-                      target.style.display = 'none';
-                    }}
-                  />
+                  {/* 画像や動画URLがある場合、または外部URLがある場合のみサムネイル表示を試みる */}
+                  {/* Character, Videoカテゴリーは通常通り表示 */}
+                  {/* Talk, Musicカテゴリーは外部URLがある場合のみサムネイル表示を試みる */}
+                  {(post.category === 'character' || post.category === 'video') && post.file_url ? (
+                    <img 
+                      src={getThumbnailUrl(post)} 
+                      alt={post.title}
+                      className="relative z-10 w-full h-full object-cover"
+                      onError={(e) => {
+                        // エラーログを減らすため、詳細なログは出力しない
+                        const target = e.target as HTMLImageElement;
+                        
+                        // 元のURLを記録
+                        const originalSrc = target.src;
+                        
+                        // 方法1: 直接URLを試す
+                        if (post.file_url && post.file_url.startsWith('http') && originalSrc !== post.file_url) {
+                          target.src = post.file_url;
+                          return;
+                        }
+                        
+                        // 方法2: getPublicUrl APIを使用
+                        try {
+                          if (post.file_url) {
+                            // パスの先頭のスラッシュを削除（Supabaseの仕様）
+                            const cleanPath = post.file_url.startsWith('/') ? post.file_url.substring(1) : post.file_url;
+                            const publicUrl = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(cleanPath).data.publicUrl;
+                            
+                            if (originalSrc !== publicUrl) {
+                              target.src = publicUrl;
+                              return;
+                            }
+                          }
+                        } catch (err) {
+                          // エラー処理
+                        }
+                        
+                        // 方法3: 直接URLを構築
+                        try {
+                          if (post.file_url) {
+                            const cleanPath = post.file_url.startsWith('/') ? post.file_url.substring(1) : post.file_url;
+                            const baseStorageUrl = import.meta.env.VITE_SUPABASE_URL.replace('.supabase.co', '.supabase.co/storage/v1/object/public');
+                            const directUrl = `${baseStorageUrl}/${STORAGE_BUCKET}/${cleanPath}`;
+                            
+                            if (originalSrc !== directUrl) {
+                              target.src = directUrl;
+                              return;
+                            }
+                          }
+                        } catch (err) {
+                          // エラー処理
+                        }
+                        
+                        // 方法4: 相対パスを試す
+                        if (post.file_url && !post.file_url.startsWith('http') && originalSrc !== post.file_url) {
+                          target.src = post.file_url;
+                          return;
+                        }
+                        
+                        // それでもダメなら画像を非表示にして背景を表示
+                        target.style.display = 'none';
+                      }}
+                    />
+                  ) : post.external_url ? (
+                    // 外部URLがある場合（YouTubeなど）
+                    <img 
+                      src={getThumbnailUrl(post)} 
+                      alt={post.title}
+                      className="relative z-10 w-full h-full object-cover"
+                      onError={(e) => {
+                        // エラー時は画像を非表示にして背景を表示
+                        const target = e.target as HTMLImageElement;
+                        target.style.display = 'none';
+                      }}
+                    />
+                  ) : (
+                    // ファイルURLも外部URLもない場合、またはTalk/Musicカテゴリーで画像がない場合
+                    <div className="relative z-10 w-full h-full flex items-center justify-center">
+                      <div className="text-5xl">
+                        {post.category === 'talk' && '💬'}
+                        {post.category === 'music' && '🎵'}
+                        {post.category === 'video' && '🎬'}
+                        {post.category === 'character' && '👤'}
+                        {contentType === 'youtube' && '▶️'}
+                        {contentType === 'vimeo' && '📹'}
+                        {contentType === 'nicovideo' && '📺'}
+                        {contentType === 'soundcloud' && '🔊'}
+                        {contentType === 'spotify' && '🎧'}
+                        {contentType === 'unknown' && post.category !== 'talk' && post.category !== 'music' && post.category !== 'video' && post.category !== 'character' && '📄'}
+                      </div>
+                    </div>
+                  )}
                   
                   {/* コンテンツタイプアイコン */}
                   <div className="absolute top-0 left-0 bg-black bg-opacity-60 text-white text-xs px-2 py-1 m-2 rounded z-20">

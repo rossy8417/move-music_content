@@ -25,7 +25,7 @@ function App() {
             {/* Auth関連のルートを削除 */}
             {/* <Route path="/auth" element={<Auth />} /> */}
             {/* <Route path="/profile" element={<Profile />} /> */}
-            <Route path="/posts/:id" element={<PostDetail />} />
+            <Route path="/post/:id" element={<PostDetail />} />
             <Route path="/new-post" element={<NewPost />} />
           </Routes>
         </main>
