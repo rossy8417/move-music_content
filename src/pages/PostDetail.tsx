@@ -141,9 +141,9 @@ export function PostDetail() {
         // Check if current user has liked
         try {
           const { data: likeData, error: likeError } = await supabase
-            .from('likes')
-            .select('*')
-            .eq('post_id', id)
+          .from('likes')
+          .select('*')
+          .eq('post_id', id)
             .eq('user_id', currentUserId);
 
           if (!likeError && likeData && likeData.length > 0) {
@@ -340,8 +340,8 @@ export function PostDetail() {
           }
         } catch (err) {
           console.error('コメント更新中に例外が発生:', err);
-        }
-      } else {
+      }
+    } else {
         console.error('コメント投稿エラー:', error);
         setActionError('コメントの投稿に失敗しました。テーブルが存在するか確認してください。');
       }
@@ -756,9 +756,9 @@ export function PostDetail() {
             <div className="flex items-center space-x-1 text-gray-600">
               <MessageSquare size={20} />
               <span>{comments.length}</span>
-            </div>
           </div>
         </div>
+      </div>
 
         <div className="border-t border-gray-200 p-6">
           <h2 className="text-xl font-semibold mb-4">コメント</h2>
