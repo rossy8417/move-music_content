@@ -19,8 +19,15 @@ export function PostDetail() {
   const [hasLiked, setHasLiked] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   const audioRef = React.useRef<HTMLAudioElement>(null);
   const videoRef = React.useRef<HTMLVideoElement>(null);
+
+  // 匿名ユーザーID（認証なしでも機能を使えるようにする）
+  const ANONYMOUS_USER_ID = '00000000-0000-0000-0000-000000000000';
+
+  // 現在のユーザーID（認証済みまたは匿名）
+  const currentUserId = user?.id || ANONYMOUS_USER_ID;
 
   useEffect(() => {
     if (!id) return;
@@ -149,38 +156,36 @@ export function PostDetail() {
           console.error('いいね数取得中に例外が発生:', err);
         }
 
-        if (user) {
-          // Check if user has voted (with error handling)
-          try {
-            const { data: voteData, error: voteError } = await supabase
-              .from('votes')
-              .select('*')
-              .eq('post_id', id)
-              .eq('user_id', user.id)
-              .single();
+        // Check if current user has voted
+        try {
+          const { data: voteData, error: voteError } = await supabase
+            .from('votes')
+            .select('*')
+            .eq('post_id', id)
+            .eq('user_id', currentUserId)
+            .single();
 
-            if (!voteError) {
-              setHasVoted(!!voteData);
-            }
-          } catch (err) {
-            console.error('投票状態の確認中に例外が発生:', err);
+          if (!voteError) {
+            setHasVoted(!!voteData);
           }
+        } catch (err) {
+          console.error('投票状態の確認中に例外が発生:', err);
+        }
 
-          // Check if user has liked (with error handling)
-          try {
-            const { data: likeData, error: likeError } = await supabase
-              .from('likes')
-              .select('*')
-              .eq('post_id', id)
-              .eq('user_id', user.id)
-              .single();
+        // Check if current user has liked
+        try {
+          const { data: likeData, error: likeError } = await supabase
+            .from('likes')
+            .select('*')
+            .eq('post_id', id)
+            .eq('user_id', currentUserId)
+            .single();
 
-            if (!likeError) {
-              setHasLiked(!!likeData);
-            }
-          } catch (err) {
-            console.error('いいね状態の確認中に例外が発生:', err);
+          if (!likeError) {
+            setHasLiked(!!likeData);
           }
+        } catch (err) {
+          console.error('いいね状態の確認中に例外が発生:', err);
         }
       } catch (err) {
         console.error('データ取得中に予期しない例外が発生:', err);
@@ -190,7 +195,7 @@ export function PostDetail() {
     }
 
     fetchPostData();
-  }, [id, user]);
+  }, [id, currentUserId]);
 
   // コンテンツタイプを判定する関数
   const getContentType = () => {
@@ -267,16 +272,19 @@ export function PostDetail() {
     }
   };
 
+  // コメント送信処理
   const handleComment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user || !newComment.trim()) return;
+    if (!newComment.trim()) return;
+    
+    setActionError(null);
 
     try {
       const { error } = await supabase
         .from('comments')
         .insert({
           post_id: id,
-          user_id: user.id,
+          user_id: currentUserId,
           content: newComment.trim(),
         });
 
@@ -321,67 +329,97 @@ export function PostDetail() {
         }
       } else {
         console.error('コメント投稿エラー:', error);
+        setActionError('コメントの投稿に失敗しました。テーブルが存在するか確認してください。');
       }
     } catch (err) {
       console.error('コメント送信中に例外が発生:', err);
+      setActionError('コメントの送信中にエラーが発生しました。');
     }
   };
 
+  // 投票処理
   const handleVote = async () => {
-    if (!user || !id) return;
+    if (!id) return;
+    
+    setActionError(null);
 
-    if (hasVoted) {
-      const { error } = await supabase
-        .from('votes')
-        .delete()
-        .eq('post_id', id)
-        .eq('user_id', user.id);
+    try {
+      if (hasVoted) {
+        const { error } = await supabase
+          .from('votes')
+          .delete()
+          .eq('post_id', id)
+          .eq('user_id', currentUserId);
 
-      if (!error) {
-        setHasVoted(false);
-        setVotesCount(prev => prev - 1);
+        if (!error) {
+          setHasVoted(false);
+          setVotesCount(prev => prev - 1);
+        } else {
+          console.error('投票削除エラー:', error);
+          setActionError('投票の取り消しに失敗しました。');
+        }
+      } else {
+        const { error } = await supabase
+          .from('votes')
+          .insert({
+            post_id: id,
+            user_id: currentUserId,
+          });
+
+        if (!error) {
+          setHasVoted(true);
+          setVotesCount(prev => prev + 1);
+        } else {
+          console.error('投票エラー:', error);
+          setActionError('投票に失敗しました。テーブルが存在するか確認してください。');
+        }
       }
-    } else {
-      const { error } = await supabase
-        .from('votes')
-        .insert({
-          post_id: id,
-          user_id: user.id,
-        });
-
-      if (!error) {
-        setHasVoted(true);
-        setVotesCount(prev => prev + 1);
-      }
+    } catch (err) {
+      console.error('投票処理中に例外が発生:', err);
+      setActionError('投票処理中にエラーが発生しました。');
     }
   };
 
+  // いいね処理
   const handleLike = async () => {
-    if (!user || !id) return;
+    if (!id) return;
+    
+    setActionError(null);
 
-    if (hasLiked) {
-      const { error } = await supabase
-        .from('likes')
-        .delete()
-        .eq('post_id', id)
-        .eq('user_id', user.id);
+    try {
+      if (hasLiked) {
+        const { error } = await supabase
+          .from('likes')
+          .delete()
+          .eq('post_id', id)
+          .eq('user_id', currentUserId);
 
-      if (!error) {
-        setHasLiked(false);
-        setLikesCount(prev => prev - 1);
+        if (!error) {
+          setHasLiked(false);
+          setLikesCount(prev => prev - 1);
+        } else {
+          console.error('いいね削除エラー:', error);
+          setActionError('いいねの取り消しに失敗しました。');
+        }
+      } else {
+        const { error } = await supabase
+          .from('likes')
+          .insert({
+            post_id: id,
+            user_id: currentUserId,
+          });
+
+        if (!error) {
+          setHasLiked(true);
+          setLikesCount(prev => prev + 1);
+        } else {
+          console.error('いいねエラー:', error);
+          setActionError('いいねに失敗しました。テーブルが存在するか確認してください。');
+        }
       }
-    } else {
-      const { error } = await supabase
-        .from('likes')
-        .insert({
-          post_id: id,
-          user_id: user.id,
-        });
-
-      if (!error) {
-        setHasLiked(true);
-        setLikesCount(prev => prev + 1);
-      }
+    } catch (err) {
+      console.error('いいね処理中に例外が発生:', err);
+      setActionError('いいね処理中にエラーが発生しました。');
     }
   };
 
@@ -592,6 +630,12 @@ export function PostDetail() {
             )}
           </div>
 
+          {actionError && (
+            <div className="bg-red-50 border border-red-200 text-red-600 p-3 rounded-lg mb-4">
+              {actionError}
+            </div>
+          )}
+
           <div className="flex items-center space-x-6 border-t border-gray-200 pt-6 mt-6">
             <button
               onClick={handleVote}
@@ -631,7 +675,7 @@ export function PostDetail() {
             />
             <button
               type="submit"
-              disabled={!user || !newComment.trim()}
+              disabled={!newComment.trim()}
               className="mt-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400"
             >
               コメントする
@@ -655,7 +699,7 @@ export function PostDetail() {
                       ) : (
                         <div className="w-8 h-8 bg-gray-300 rounded-full mr-2" />
                       )}
-                      <span className="font-medium">{comment.author?.username || 'Anonymous'}</span>
+                      <span className="font-medium">{comment.author?.username || '匿名ユーザー'}</span>
                     </div>
                     <span className="text-xs text-gray-500">
                       {new Date(comment.created_at).toLocaleDateString()}

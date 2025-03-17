@@ -42,12 +42,18 @@ export function getPublicFileUrl(bucket: string, path: string): string {
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
+// 開発サーバーのベースURL
+export const BASE_URL = import.meta.env.DEV 
+  ? window.location.protocol + '//' + window.location.hostname + ':5173'
+  : window.location.origin;
+
 // 環境変数のチェック
 console.log('環境変数チェック:', {
   SUPABASE_URL_EXISTS: !!supabaseUrl,
   SUPABASE_URL: supabaseUrl,
   SUPABASE_ANON_KEY_EXISTS: !!supabaseAnonKey,
-  SUPABASE_ANON_KEY_PREFIX: supabaseAnonKey ? supabaseAnonKey.substring(0, 10) + '...' : 'なし'
+  SUPABASE_ANON_KEY_PREFIX: supabaseAnonKey ? supabaseAnonKey.substring(0, 10) + '...' : 'なし',
+  BASE_URL: BASE_URL
 });
 
 if (!supabaseUrl || !supabaseAnonKey) {

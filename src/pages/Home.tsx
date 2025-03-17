@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
-import { supabase, getPublicFileUrl, STORAGE_BUCKET } from '../lib/supabase';
+import { supabase, getPublicFileUrl, STORAGE_BUCKET, BASE_URL } from '../lib/supabase';
 import type { Post, PostCategory } from '../types/database';
 
 // カテゴリー別の背景色
@@ -50,47 +50,32 @@ export function Home() {
     fetchPosts();
   }, [category]);
 
-  // サムネイル画像のURLを取得する関数
-  const getThumbnailUrl = (post: Post) => {
-    // 1. アップロードされたファイルがある場合
-    if (post.file_url) {
-      console.log('ファイルURL (元のパス):', post.file_url);
-      // 画像ファイルの拡張子かどうかをチェック
-      const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg'];
-      const isImage = imageExtensions.some(ext => 
-        post.file_url?.toLowerCase().endsWith(ext)
-      );
+  // ファイルのサムネイルURLを取得する関数
+  const getThumbnailUrl = (post: any): string => {
+    try {
+      if (!post.file_url) return '';
+      
+      // 画像ファイルかどうかを確認
+      const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(post.file_url);
       
       if (isImage) {
+        // 新しいgetPublicFileUrl関数を使用
         try {
-          // 改善された関数を使用
-          const publicUrl = getPublicFileUrl(STORAGE_BUCKET, post.file_url);
-          if (publicUrl) {
-            return publicUrl;
-          }
-          throw new Error('画像URLの生成に失敗しました');
-        } catch (err) {
-          console.error('画像URL生成エラー:', err);
-          // エラー時はカテゴリー別のプレースホルダーを使用
+          const url = getPublicFileUrl(STORAGE_BUCKET, post.file_url);
+          console.log(`生成されたURL: ${url}`);
+          return url;
+        } catch (error) {
+          console.error('サムネイルURL生成エラー:', error);
+          return '';
         }
+      } else {
+        // 画像以外のファイルの場合はカテゴリアイコンを表示
+        return '';
       }
+    } catch (error) {
+      console.error('サムネイル処理エラー:', error);
+      return '';
     }
-    
-    // 2. 外部URLがある場合（YouTubeやVimeoなど）
-    if (post.external_url) {
-      console.log('外部URL:', post.external_url);
-      // YouTube URLからサムネイルを取得
-      const youtubeMatch = post.external_url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/);
-      if (youtubeMatch && youtubeMatch[1]) {
-        const videoId = youtubeMatch[1];
-        return `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`;
-      }
-    }
-    
-    // 3. カテゴリー別のプレースホルダー画像を返す
-    const color = CATEGORY_COLORS[post.category] || CATEGORY_COLORS.default;
-    const icon = CATEGORY_ICONS[post.category] || CATEGORY_ICONS.default;
-    return `https://placehold.co/300x180/${color}/2d3748?text=${icon}+${post.category}`;
   };
 
   // コンテンツタイプを判定する関数
@@ -144,7 +129,7 @@ export function Home() {
             return (
               <Link 
                 key={post.id} 
-                to={`/posts/${post.id}`}
+                to={`/post/${post.id}`}
                 className="bg-white rounded-lg shadow-sm overflow-hidden hover:shadow-md transition-shadow duration-300"
               >
                 <div className="aspect-video relative overflow-hidden bg-gray-100">
