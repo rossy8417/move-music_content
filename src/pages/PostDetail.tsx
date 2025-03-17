@@ -12,6 +12,7 @@ export function PostDetail() {
   const [author, setAuthor] = useState<Profile | null>(null);
   const [comments, setComments] = useState<(Comment & { author: Profile })[]>([]);
   const [newComment, setNewComment] = useState('');
+  const [commentName, setCommentName] = useState('');
   const [loading, setLoading] = useState(true);
   const [likesCount, setLikesCount] = useState(0);
   const [hasLiked, setHasLiked] = useState(false);
@@ -79,16 +80,29 @@ export function PostDetail() {
           if (!tableCheckError) {
             // テーブルが存在する場合のみコメントを取得
             const { data: commentsData, error: commentsError } = await supabase
-        .from('comments')
+              .from('comments')
               .select('*, user_id')
-        .eq('post_id', id)
-        .order('created_at', { ascending: false });
+              .eq('post_id', id)
+              .order('created_at', { ascending: false });
 
             if (!commentsError && commentsData) {
               // プロフィール情報を別途取得して結合
               const commentsWithAuthors = await Promise.all(
                 commentsData.map(async (comment) => {
                   try {
+                    // コメント名が設定されている場合はそれを優先
+                    if (comment.commenter_name) {
+                      return {
+                        ...comment,
+                        author: { 
+                          username: comment.commenter_name,
+                          // 匿名ユーザーの場合はアバターなし
+                          avatar_url: null
+                        }
+                      };
+                    }
+                    
+                    // コメント名がない場合はプロフィール情報を取得
                     const { data: profileData } = await supabase
                       .from('profiles')
                       .select('*')
@@ -102,7 +116,7 @@ export function PostDetail() {
                   } catch (err) {
                     return {
                       ...comment,
-                      author: { username: '匿名ユーザー' }
+                      author: { username: comment.commenter_name || '匿名ユーザー' }
                     };
                   }
                 })
@@ -294,29 +308,52 @@ export function PostDetail() {
     setActionError(null);
 
     try {
-    const { error } = await supabase
-      .from('comments')
-      .insert({
+      // コメント情報を準備
+      const commentData: any = {
         post_id: id,
-          user_id: currentUserId,
+        user_id: currentUserId,
         content: newComment.trim(),
-      });
+      };
 
-    if (!error) {
-      setNewComment('');
+      // 名前が入力されている場合は追加
+      if (commentName.trim()) {
+        commentData.commenter_name = commentName.trim();
+      }
+
+      const { error } = await supabase
+        .from('comments')
+        .insert(commentData);
+
+      if (!error) {
+        setNewComment('');
+        // 名前はクリアしない（次回も同じ名前で投稿できるように）
+        
         // Refresh comments with error handling
         try {
           const { data, error: refreshError } = await supabase
-        .from('comments')
+            .from('comments')
             .select('*, user_id')
-        .eq('post_id', id)
-        .order('created_at', { ascending: false });
+            .eq('post_id', id)
+            .order('created_at', { ascending: false });
 
           if (!refreshError && data) {
             // プロフィール情報を別途取得して結合
             const commentsWithAuthors = await Promise.all(
               data.map(async (comment) => {
                 try {
+                  // 表示名が設定されている場合はそれを優先
+                  if (comment.commenter_name) {
+                    return {
+                      ...comment,
+                      author: { 
+                        username: comment.commenter_name,
+                        // 匿名ユーザーの場合はアバターなし
+                        avatar_url: null
+                      }
+                    };
+                  }
+                  
+                  // 表示名がない場合はプロフィール情報を取得
                   const { data: profileData } = await supabase
                     .from('profiles')
                     .select('*')
@@ -330,7 +367,7 @@ export function PostDetail() {
                 } catch (err) {
                   return {
                     ...comment,
-                    author: { username: '匿名ユーザー' }
+                    author: { username: comment.commenter_name || '匿名ユーザー' }
                   };
                 }
               })
@@ -340,8 +377,8 @@ export function PostDetail() {
           }
         } catch (err) {
           console.error('コメント更新中に例外が発生:', err);
-      }
-    } else {
+        }
+      } else {
         console.error('コメント投稿エラー:', error);
         setActionError('コメントの投稿に失敗しました。テーブルが存在するか確認してください。');
       }
@@ -764,13 +801,22 @@ export function PostDetail() {
           <h2 className="text-xl font-semibold mb-4">コメント</h2>
 
           <form onSubmit={handleComment} className="mb-6">
-            <textarea
-              value={newComment}
-              onChange={(e) => setNewComment(e.target.value)}
-              placeholder="コメントを入力..."
-              className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              rows={3}
-            />
+            <div className="mb-3">
+              <input
+                type="text"
+                value={commentName}
+                onChange={(e) => setCommentName(e.target.value)}
+                placeholder="名前（任意）"
+                className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 mb-2"
+              />
+              <textarea
+                value={newComment}
+                onChange={(e) => setNewComment(e.target.value)}
+                placeholder="コメントを入力..."
+                className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                rows={3}
+              />
+            </div>
             <button
               type="submit"
               disabled={!newComment.trim()}
@@ -782,25 +828,16 @@ export function PostDetail() {
 
           {comments.length === 0 ? (
             <p className="text-gray-500 text-center py-4">コメントはまだありません</p>
-        ) : (
+          ) : (
             <div className="space-y-4">
-          {comments.map((comment) => (
+              {comments.map((comment) => (
                 <div key={comment.id} className="bg-gray-50 p-4 rounded-lg">
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center">
-                      {comment.author?.avatar_url ? (
-                  <img
-                    src={comment.author.avatar_url}
-                    alt={comment.author.username}
-                          className="w-8 h-8 rounded-full mr-2"
-                        />
-                      ) : (
-                        <div className="w-8 h-8 bg-gray-300 rounded-full mr-2" />
-                      )}
                       <span className="font-medium">{comment.author?.username || '匿名ユーザー'}</span>
                     </div>
                     <span className="text-xs text-gray-500">
-                    {new Date(comment.created_at).toLocaleDateString()}
+                      {new Date(comment.created_at).toLocaleDateString()}
                     </span>
                   </div>
                   <p className="text-gray-700 whitespace-pre-wrap">{comment.content}</p>
