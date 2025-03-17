@@ -2,12 +2,14 @@ import React, { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { supabase, getPublicFileUrl, STORAGE_BUCKET } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
+import { useFacebookAuth } from '../contexts/FacebookAuthContext';
 import type { Post, Comment, Profile } from '../types/database';
 import { MessageSquare, ThumbsUp, ArrowLeft, ExternalLink, Play, Pause, Volume2, VolumeX } from 'lucide-react';
 
 export function PostDetail() {
   const { id } = useParams<{ id: string }>();
-  const { user } = useAuth();
+  const { user: supabaseUser } = useAuth();
+  const { user: facebookUser, isAuthenticated: isFacebookAuthenticated } = useFacebookAuth();
   const [post, setPost] = useState<Post | null>(null);
   const [author, setAuthor] = useState<Profile | null>(null);
   const [comments, setComments] = useState<(Comment & { author: Profile })[]>([]);
@@ -26,7 +28,7 @@ export function PostDetail() {
   const ANONYMOUS_USER_ID = '00000000-0000-0000-0000-000000000000';
 
   // 現在のユーザーID（認証済みまたは匿名）
-  const currentUserId = user?.id || ANONYMOUS_USER_ID;
+  const currentUserId = facebookUser?.id || supabaseUser?.id || ANONYMOUS_USER_ID;
 
   useEffect(() => {
     if (!id) return;
@@ -96,13 +98,13 @@ export function PostDetail() {
                         ...comment,
                         author: { 
                           username: comment.commenter_name,
-                          // 匿名ユーザーの場合はアバターなし
-                          avatar_url: null
+                          // コメント投稿者のアバター画像があれば使用
+                          avatar_url: comment.commenter_avatar_url || null
                         }
                       };
                     }
                     
-                    // コメント名がない場合はプロフィール情報を取得
+                    // 表示名がない場合はプロフィール情報を取得
                     const { data: profileData } = await supabase
                       .from('profiles')
                       .select('*')
@@ -180,7 +182,7 @@ export function PostDetail() {
     }
 
     fetchPostData();
-  }, [id, currentUserId]);
+  }, [id]);
 
   // コンテンツタイプを判定する関数
   const getContentType = () => {
@@ -315,8 +317,13 @@ export function PostDetail() {
         content: newComment.trim(),
       };
 
-      // 名前が入力されている場合は追加
-      if (commentName.trim()) {
+      // Facebookユーザー情報がある場合は優先して使用
+      if (isFacebookAuthenticated && facebookUser) {
+        commentData.commenter_name = facebookUser.name || 'Facebook User';
+        commentData.commenter_avatar_url = facebookUser.picture?.data?.url || null;
+      }
+      // 名前が手動入力されている場合はそれを使用（Facebookログインがない場合）
+      else if (commentName.trim() && !isFacebookAuthenticated) {
         commentData.commenter_name = commentName.trim();
       }
 
@@ -347,8 +354,8 @@ export function PostDetail() {
                       ...comment,
                       author: { 
                         username: comment.commenter_name,
-                        // 匿名ユーザーの場合はアバターなし
-                        avatar_url: null
+                        // コメント投稿者のアバター画像があれば使用
+                        avatar_url: comment.commenter_avatar_url || null
                       }
                     };
                   }
@@ -757,7 +764,32 @@ export function PostDetail() {
       <div className="bg-white rounded-lg shadow-md overflow-hidden">
         <div className="p-6">
           <div className="flex items-center justify-between mb-4">
-            <h1 className="text-2xl font-bold">{post.title}</h1>
+            <div>
+              <h1 className="text-2xl font-bold">{post.title}</h1>
+              <div className="flex items-center mt-2">
+                {/* 投稿者情報の表示 */}
+                {post.author_avatar_url ? (
+                  <img 
+                    src={post.author_avatar_url} 
+                    alt="投稿者" 
+                    className="w-6 h-6 rounded-full mr-2"
+                  />
+                ) : author?.avatar_url ? (
+                  <img 
+                    src={author.avatar_url} 
+                    alt="投稿者" 
+                    className="w-6 h-6 rounded-full mr-2"
+                  />
+                ) : (
+                  <div className="w-6 h-6 bg-gray-300 rounded-full mr-2 flex items-center justify-center text-xs text-gray-600">
+                    👤
+                  </div>
+                )}
+                <span className="text-sm text-gray-600">
+                  {post.author_name || author?.username || '匿名ユーザー'}
+                </span>
+              </div>
+            </div>
             <span className="text-sm text-gray-500">
               {new Date(post.created_at).toLocaleDateString()}
             </span>
@@ -801,14 +833,32 @@ export function PostDetail() {
           <h2 className="text-xl font-semibold mb-4">コメント</h2>
 
           <form onSubmit={handleComment} className="mb-6">
+            {/* Facebookでログインしていない場合のみ名前入力欄を表示 */}
+            {!isFacebookAuthenticated && (
+              <div className="mb-3">
+                <input
+                  type="text"
+                  value={commentName}
+                  onChange={(e) => setCommentName(e.target.value)}
+                  placeholder="名前（任意）"
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 mb-2"
+                />
+              </div>
+            )}
+            {/* Facebookでログインしている場合は名前を表示 */}
+            {isFacebookAuthenticated && facebookUser && (
+              <div className="flex items-center mb-3 bg-gray-50 p-3 rounded-lg">
+                {facebookUser.picture?.data?.url && (
+                  <img 
+                    src={facebookUser.picture.data.url} 
+                    alt="プロフィール" 
+                    className="w-8 h-8 rounded-full mr-2"
+                  />
+                )}
+                <span className="text-sm font-medium">{facebookUser.name || 'Facebook User'} としてコメント</span>
+              </div>
+            )}
             <div className="mb-3">
-              <input
-                type="text"
-                value={commentName}
-                onChange={(e) => setCommentName(e.target.value)}
-                placeholder="名前（任意）"
-                className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 mb-2"
-              />
               <textarea
                 value={newComment}
                 onChange={(e) => setNewComment(e.target.value)}
@@ -834,6 +884,17 @@ export function PostDetail() {
                 <div key={comment.id} className="bg-gray-50 p-4 rounded-lg">
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center">
+                      {comment.author?.avatar_url ? (
+                        <img 
+                          src={comment.author.avatar_url} 
+                          alt="コメント投稿者" 
+                          className="w-6 h-6 rounded-full mr-2"
+                        />
+                      ) : (
+                        <div className="w-6 h-6 bg-gray-300 rounded-full mr-2 flex items-center justify-center text-xs text-gray-600">
+                          👤
+                        </div>
+                      )}
                       <span className="font-medium">{comment.author?.username || '匿名ユーザー'}</span>
                     </div>
                     <span className="text-xs text-gray-500">

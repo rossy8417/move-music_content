@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase, STORAGE_BUCKET, createStorageBucket, checkBucketPermissions } from '../lib/supabase';
 import type { PostCategory } from '../types/database';
 import { v4 as uuidv4 } from 'uuid';
+import { useFacebookAuth } from '../contexts/FacebookAuthContext';
 
 // 環境変数から投稿パスワードとSupabase URLを取得
 const POST_PASSWORD = import.meta.env.VITE_POST_PASSWORD;
@@ -16,6 +17,7 @@ console.log('環境変数が正しく読み込まれているか確認:', {
 
 export function NewPost() {
   const navigate = useNavigate();
+  const { user: facebookUser, isAuthenticated: isFacebookAuthenticated } = useFacebookAuth();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState<PostCategory>('character');
@@ -263,21 +265,30 @@ export function NewPost() {
       }
     }
 
-    // 固定の匿名ユーザーIDを使用
-    const anonymousId = '00000000-0000-0000-0000-000000000000';
-    console.log('使用するユーザーID:', anonymousId);
+    // ユーザーID（Facebookログイン済みの場合はFacebookのID、それ以外は匿名ID）
+    const userId = isFacebookAuthenticated && facebookUser ? facebookUser.id : '00000000-0000-0000-0000-000000000000';
+    console.log('使用するユーザーID:', userId);
+
+    // 投稿データを準備
+    const postData: any = {
+      user_id: userId,
+      title,
+      description,
+      category,
+      file_url: uploadedFileUrl || null,
+      external_url: externalUrl || null,
+    };
+
+    // Facebookユーザー情報がある場合は追加
+    if (isFacebookAuthenticated && facebookUser) {
+      postData.author_name = facebookUser.name || 'Facebook User';
+      postData.author_avatar_url = facebookUser.picture?.data?.url || null;
+    }
 
     try {
       const { data, error } = await supabase
         .from('posts')
-        .insert({
-          user_id: anonymousId,
-          title,
-          description,
-          category,
-          file_url: uploadedFileUrl || null,
-          external_url: externalUrl || null,
-        });
+        .insert(postData);
 
       setLoading(false);
 

@@ -144,14 +144,35 @@ export const FacebookAuthProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
     try {
       console.log('Facebookログアウトを開始します...');
-      await new Promise<void>((resolve) => {
-        window.FB.logout(() => resolve());
+      
+      // まずログイン状態を確認
+      const loginStatus = await new Promise<FacebookLoginStatusResponse>((resolve) => {
+        window.FB.getLoginStatus(resolve);
       });
+      
+      console.log('ログアウト前のステータス確認:', loginStatus);
+      
+      if (loginStatus.status === 'connected') {
+        // 接続されている場合のみログアウトを実行
+        await new Promise<void>((resolve) => {
+          window.FB.logout(() => {
+            console.log('FB.logoutが完了しました');
+            resolve();
+          });
+        });
+      } else {
+        console.log('ログアウト不要: 既に接続されていません');
+      }
+      
+      // ローカルのユーザー情報をクリア
       setUser(null);
       localStorage.removeItem('facebook_user');
       console.log('Facebookログアウト完了');
     } catch (error) {
       console.error('Facebookログアウトエラー:', error);
+      // エラーが発生してもローカルのユーザー情報はクリア
+      setUser(null);
+      localStorage.removeItem('facebook_user');
     }
   };
 

@@ -18,6 +18,8 @@ export interface Post {
   external_url: string | null;
   created_at: string;
   updated_at: string;
+  author_name?: string;
+  author_avatar_url?: string;
 }
 
 export interface Comment {
@@ -26,6 +28,8 @@ export interface Comment {
   user_id: string;
   content: string;
   created_at: string;
+  commenter_name?: string;
+  commenter_avatar_url?: string;
 }
 
 export interface Vote {
