@@ -238,7 +238,7 @@ export function PostDetail() {
           .from('likes')
           .select('*')
           .eq('post_id', id)
-            .eq('user_id', currentUserId);
+            .eq('user_id', ANONYMOUS_USER_ID);
 
           if (!likeError && likeData && likeData.length > 0) {
             setHasLiked(true);
@@ -391,7 +391,8 @@ export function PostDetail() {
       // コメント情報を準備
       const commentData: any = {
         post_id: id,
-        user_id: currentUserId, // 既に変換済みのIDを使用
+        // user_idにデフォルト値を設定（NOT NULL制約対応）
+        user_id: ANONYMOUS_USER_ID,
         content: newComment.trim(),
       };
 
@@ -399,6 +400,8 @@ export function PostDetail() {
       if (isFacebookAuthenticated && facebookUser) {
         commentData.commenter_name = facebookUser.name || 'Facebook User';
         commentData.commenter_avatar_url = facebookUser.picture?.data?.url || null;
+        // デバッグ用にFacebook IDも記録
+        console.log('Facebook ID:', facebookUser.id);
       }
       // 名前が手動入力されている場合はそれを使用（Facebookログインがない場合）
       else if (commentName.trim() && !isFacebookAuthenticated) {
@@ -440,16 +443,23 @@ export function PostDetail() {
                     };
                   }
                   
-                  // 表示名がない場合はプロフィール情報を取得
-                  const { data: profileData } = await supabase
-                    .from('profiles')
-                    .select('*')
-                    .eq('id', comment.user_id)
-                    .single();
+                  // 表示名がない場合はプロフィール情報を取得（user_idがnullでない場合のみ）
+                  if (comment.user_id) {
+                    const { data: profileData } = await supabase
+                      .from('profiles')
+                      .select('*')
+                      .eq('id', comment.user_id)
+                      .single();
+                    
+                    return {
+                      ...comment,
+                      author: profileData || { username: '匿名ユーザー' }
+                    };
+                  }
                   
                   return {
                     ...comment,
-                    author: profileData || { username: '匿名ユーザー' }
+                    author: { username: comment.commenter_name || '匿名ユーザー' }
                   };
                 } catch (err) {
                   return {
@@ -467,7 +477,7 @@ export function PostDetail() {
         }
       } else {
         console.error('コメント投稿エラー:', error);
-        setActionError('コメントの投稿に失敗しました。テーブルが存在するか確認してください。');
+        setActionError('コメントの投稿に失敗しました: ' + error.message);
       }
     } catch (err) {
       console.error('コメント送信中に例外が発生:', err);
@@ -487,20 +497,27 @@ export function PostDetail() {
           .from('likes')
           .delete()
           .eq('post_id', id)
-          .eq('user_id', currentUserId); // 既に変換済みのIDを使用
+          .eq('user_id', ANONYMOUS_USER_ID); // 匿名ユーザーIDを使用
 
         if (!error) {
           setHasLiked(false);
           setLikesCount(prev => prev - 1);
         } else {
           console.error('いいね削除エラー:', error);
-          setActionError('いいねの取り消しに失敗しました。');
+          setActionError('いいねの取り消しに失敗しました: ' + error.message);
         }
       } else {
+        // いいねデータを準備
         const likeData = {
           post_id: id,
-          user_id: currentUserId, // 既に変換済みのIDを使用
+          // 匿名ユーザーIDを使用（外部キー制約エラー回避）
+          user_id: ANONYMOUS_USER_ID,
         };
+        
+        // デバッグ用にFacebook IDも記録
+        if (facebookUser) {
+          console.log('Facebook ID (いいね):', facebookUser.id);
+        }
         
         console.log('いいねデータ:', likeData);
         
@@ -513,7 +530,7 @@ export function PostDetail() {
           setLikesCount(prev => prev + 1);
         } else {
           console.error('いいねエラー:', error);
-          setActionError('いいねに失敗しました。テーブルが存在するか確認してください。');
+          setActionError('いいねに失敗しました: ' + error.message);
         }
       }
     } catch (err) {
