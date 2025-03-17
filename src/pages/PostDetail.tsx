@@ -535,7 +535,8 @@ export function PostDetail() {
   const getAuthorFacebookPageUrl = () => {
     // 投稿者のFacebook IDがある場合
     if (post?.facebook_id) {
-      return `https://www.facebook.com/${post.facebook_id}`;
+      // MessengerのURLを返す
+      return `https://m.me/${post.facebook_id}`;
     }
     
     // 投稿者名からFacebook IDを抽出（投稿時にFacebook IDを保存していない場合の対応）
@@ -900,15 +901,16 @@ export function PostDetail() {
                 </span>
                 
                 {/* 投稿者への連絡ボタン（投稿者本人以外に表示） */}
-                {!isAuthor() && getAuthorFacebookPageUrl() && (
+                {getAuthorFacebookPageUrl() && (
                   <a 
                     href={getAuthorFacebookPageUrl() || '#'} 
                     target="_blank" 
                     rel="noopener noreferrer"
                     className="ml-3 text-blue-500 hover:text-blue-700 inline-flex items-center text-sm"
-                    title="投稿者に連絡"
+                    title="投稿者にメッセージを送る"
                   >
-                    <Mail size={14} className="mr-1" /> 連絡する
+                    <Mail size={14} className="mr-1" /> メッセージを送る
+                    {isAuthor() && ' (自分)'}
                   </a>
                 )}
               </div>
