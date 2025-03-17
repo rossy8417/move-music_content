@@ -194,38 +194,22 @@ export async function checkBucketPermissions() {
       console.log('読み取り権限あり。ファイル数:', testReadResult.data?.length || 0);
     }
     
-    // 書き込み権限の確認（空のファイルをアップロードして確認）
+    // 書き込み権限の確認（非破壊的な方法）
     console.log(`バケット '${STORAGE_BUCKET}' の書き込み権限を確認します...`);
-    const testFile = new Blob(['test'], { type: 'text/plain' });
-    const testFileName = '_permission_test_' + Date.now();
-    const testWriteResult = await supabase.storage
+    
+    // createSignedUrl APIを使用して書き込み権限を確認（実際にファイルを作成せず）
+    const { error: writeCheckError } = await supabase.storage
       .from(STORAGE_BUCKET)
-      .upload(testFileName, testFile, { upsert: true });
-      
-    const canWrite = !testWriteResult.error;
+      .createSignedUrl('write_permission_check.txt', 60);
+    
+    // エラーの種類で判断（404エラーは問題なし、403はアクセス拒否）
+    const canWrite = !writeCheckError || 
+                    (writeCheckError.message && writeCheckError.message.includes('not found'));
     
     if (!canWrite) {
-      console.error('書き込み権限エラー:', testWriteResult.error);
+      console.error('書き込み権限エラー:', writeCheckError);
     } else {
-      console.log('書き込み権限あり。テストファイル作成成功:', testWriteResult.data?.path);
-    }
-    
-    // テストファイルを削除（書き込み成功した場合のみ）
-    if (canWrite && testWriteResult.data) {
-      console.log('テストファイルを削除します...');
-      try {
-        const { error: removeError } = await supabase.storage
-          .from(STORAGE_BUCKET)
-          .remove([testWriteResult.data.path]);
-          
-        if (removeError) {
-          console.error('テストファイル削除エラー:', removeError);
-        } else {
-          console.log('テストファイル削除成功');
-        }
-      } catch (deleteError) {
-        console.error('テストファイル削除中に例外が発生しました:', deleteError);
-      }
+      console.log('書き込み権限あり（非破壊的チェック成功）');
     }
     
     return {
@@ -233,7 +217,7 @@ export async function checkBucketPermissions() {
       canRead,
       canWrite,
       error: canRead && canWrite ? null : 
-        (testReadResult.error?.message || testWriteResult.error?.message)
+        (testReadResult.error?.message || writeCheckError?.message)
     };
   } catch (error) {
     console.error('バケット権限の確認中にエラーが発生しました:', error);
@@ -246,10 +230,10 @@ export async function checkBucketPermissions() {
   }
 }
 
-// 古いテストファイルを削除する関数
+// 既存のテストファイルを削除する関数
 export async function cleanupTestFiles() {
   try {
-    console.log('古いテストファイルの削除を試みます...');
+    console.log('既存のテストファイルの削除を試みます...');
     
     // バケット内のファイル一覧を取得
     const { data: files, error } = await supabase.storage
@@ -262,7 +246,10 @@ export async function cleanupTestFiles() {
     }
     
     // テストファイルをフィルタリング
-    const testFiles = files?.filter(file => file.name.startsWith('_permission_test_')) || [];
+    const testFiles = files?.filter(file => 
+      file.name.startsWith('_permission_test_') || 
+      file.name === 'write_permission_check.txt'
+    ) || [];
     
     if (testFiles.length === 0) {
       console.log('削除すべきテストファイルはありません');
@@ -457,7 +444,7 @@ export async function initializeStorage() {
       }
     }
     
-    // 権限チェックを実行
+    // 権限チェックを実行（テストファイルを作成しない方法）
     console.log('バケットの権限チェックを実行します...');
     const permissions = await checkBucketPermissions();
     console.log('バケット権限チェック結果:', permissions);
