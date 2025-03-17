@@ -3,7 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { supabase, getPublicFileUrl, STORAGE_BUCKET } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
 import type { Post, Comment, Profile } from '../types/database';
-import { MessageSquare, ThumbsUp, Vote, ArrowLeft, ExternalLink, Play, Pause, Volume2, VolumeX } from 'lucide-react';
+import { MessageSquare, ThumbsUp, ArrowLeft, ExternalLink, Play, Pause, Volume2, VolumeX } from 'lucide-react';
 
 export function PostDetail() {
   const { id } = useParams<{ id: string }>();
@@ -13,9 +13,7 @@ export function PostDetail() {
   const [comments, setComments] = useState<(Comment & { author: Profile })[]>([]);
   const [newComment, setNewComment] = useState('');
   const [loading, setLoading] = useState(true);
-  const [votesCount, setVotesCount] = useState(0);
   const [likesCount, setLikesCount] = useState(0);
-  const [hasVoted, setHasVoted] = useState(false);
   const [hasLiked, setHasLiked] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
@@ -124,22 +122,6 @@ export function PostDetail() {
           setComments([]);
         }
 
-        // Fetch votes count (with error handling)
-        try {
-          const { count: votesCountData, error: votesError } = await supabase
-        .from('votes')
-        .select('*', { count: 'exact', head: true })
-        .eq('post_id', id);
-
-          if (!votesError) {
-      setVotesCount(votesCountData || 0);
-          } else {
-            console.log('投票数の取得に失敗:', votesError);
-          }
-        } catch (err) {
-          console.error('投票数取得中に例外が発生:', err);
-        }
-
         // Fetch likes count (with error handling)
         try {
           const { count: likesCountData, error: likesError } = await supabase
@@ -156,36 +138,25 @@ export function PostDetail() {
           console.error('いいね数取得中に例外が発生:', err);
         }
 
-        // Check if current user has voted
-        try {
-          const { data: voteData, error: voteError } = await supabase
-          .from('votes')
-          .select('*')
-          .eq('post_id', id)
-            .eq('user_id', currentUserId)
-          .single();
-
-          if (!voteError) {
-        setHasVoted(!!voteData);
-          }
-        } catch (err) {
-          console.error('投票状態の確認中に例外が発生:', err);
-        }
-
         // Check if current user has liked
         try {
           const { data: likeData, error: likeError } = await supabase
-          .from('likes')
-          .select('*')
-          .eq('post_id', id)
-            .eq('user_id', currentUserId)
-          .single();
+            .from('likes')
+            .select('*')
+            .eq('post_id', id)
+            .eq('user_id', currentUserId);
 
-          if (!likeError) {
-        setHasLiked(!!likeData);
+          if (!likeError && likeData && likeData.length > 0) {
+            setHasLiked(true);
+          } else {
+            setHasLiked(false);
+            if (likeError && likeError.code !== 'PGRST116') {
+              console.error('いいね状態の確認中にエラー:', likeError);
+            }
           }
         } catch (err) {
           console.error('いいね状態の確認中に例外が発生:', err);
+          setHasLiked(false);
         }
       } catch (err) {
         console.error('データ取得中に予期しない例外が発生:', err);
@@ -377,49 +348,6 @@ export function PostDetail() {
     } catch (err) {
       console.error('コメント送信中に例外が発生:', err);
       setActionError('コメントの送信中にエラーが発生しました。');
-    }
-  };
-
-  // 投票処理
-  const handleVote = async () => {
-    if (!id) return;
-
-    setActionError(null);
-
-    try {
-    if (hasVoted) {
-      const { error } = await supabase
-        .from('votes')
-        .delete()
-        .eq('post_id', id)
-          .eq('user_id', currentUserId);
-
-      if (!error) {
-        setHasVoted(false);
-        setVotesCount(prev => prev - 1);
-        } else {
-          console.error('投票削除エラー:', error);
-          setActionError('投票の取り消しに失敗しました。');
-      }
-    } else {
-      const { error } = await supabase
-        .from('votes')
-        .insert({
-          post_id: id,
-            user_id: currentUserId,
-        });
-
-      if (!error) {
-        setHasVoted(true);
-        setVotesCount(prev => prev + 1);
-        } else {
-          console.error('投票エラー:', error);
-          setActionError('投票に失敗しました。テーブルが存在するか確認してください。');
-        }
-      }
-    } catch (err) {
-      console.error('投票処理中に例外が発生:', err);
-      setActionError('投票処理中にエラーが発生しました。');
     }
   };
 
@@ -817,15 +745,6 @@ export function PostDetail() {
 
           <div className="flex items-center space-x-6 border-t border-gray-200 pt-6 mt-6">
             <button
-              onClick={handleVote}
-              className={`flex items-center space-x-1 ${
-                hasVoted ? 'text-green-600' : 'text-gray-600 hover:text-green-600'
-              }`}
-            >
-              <Vote size={20} />
-              <span>{votesCount}</span>
-            </button>
-            <button
               onClick={handleLike}
               className={`flex items-center space-x-1 ${
                 hasLiked ? 'text-red-600' : 'text-gray-600 hover:text-red-600'
@@ -837,9 +756,9 @@ export function PostDetail() {
             <div className="flex items-center space-x-1 text-gray-600">
               <MessageSquare size={20} />
               <span>{comments.length}</span>
+            </div>
           </div>
         </div>
-      </div>
 
         <div className="border-t border-gray-200 p-6">
           <h2 className="text-xl font-semibold mb-4">コメント</h2>
