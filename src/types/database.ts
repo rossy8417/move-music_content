@@ -20,6 +20,7 @@ export interface Post {
   updated_at: string;
   author_name?: string;
   author_avatar_url?: string;
+  facebook_id?: string;
 }
 
 export interface Comment {

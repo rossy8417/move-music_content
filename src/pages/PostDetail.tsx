@@ -4,7 +4,7 @@ import { supabase, getPublicFileUrl, STORAGE_BUCKET } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
 import { useFacebookAuth } from '../contexts/FacebookAuthContext';
 import type { Post, Comment, Profile } from '../types/database';
-import { MessageSquare, ThumbsUp, ArrowLeft, ExternalLink, Play, Pause, Volume2, VolumeX, Trash2 } from 'lucide-react';
+import { MessageSquare, ThumbsUp, ArrowLeft, ExternalLink, Play, Pause, Volume2, VolumeX, Trash2, Mail } from 'lucide-react';
 
 export function PostDetail() {
   const { id } = useParams<{ id: string }>();
@@ -522,6 +522,32 @@ export function PostDetail() {
     }
   };
 
+  // 投稿者本人かどうかを判定
+  const isAuthor = () => {
+    if (!post || !facebookUser) return false;
+    
+    // FacebookユーザーIDをUUID形式に変換して比較
+    const fbUuid = convertFacebookIdToUuid(facebookUser.id);
+    return post.user_id === fbUuid;
+  };
+
+  // 投稿者のFacebookページURL生成
+  const getAuthorFacebookPageUrl = () => {
+    // 投稿者のFacebook IDがある場合
+    if (post?.facebook_id) {
+      return `https://www.facebook.com/${post.facebook_id}`;
+    }
+    
+    // 投稿者名からFacebook IDを抽出（投稿時にFacebook IDを保存していない場合の対応）
+    if (post?.user_id && post.user_id !== ANONYMOUS_USER_ID) {
+      // UUIDからFacebook IDを復元する処理は複雑なため、
+      // 単純に投稿者名をURLに使用（実際のFacebookページとは一致しない可能性あり）
+      return `https://www.facebook.com/search/top?q=${encodeURIComponent(post.author_name || '')}`;
+    }
+    
+    return null;
+  };
+
   // コンテンツ表示部分
   const renderContent = () => {
     const contentType = getContentType();
@@ -872,6 +898,19 @@ export function PostDetail() {
                 <span className="text-sm text-gray-600">
                   {post.author_name || author?.username || '匿名ユーザー'}
                 </span>
+                
+                {/* 投稿者への連絡ボタン（投稿者本人以外に表示） */}
+                {!isAuthor() && getAuthorFacebookPageUrl() && (
+                  <a 
+                    href={getAuthorFacebookPageUrl() || '#'} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="ml-3 text-blue-500 hover:text-blue-700 inline-flex items-center text-sm"
+                    title="投稿者に連絡"
+                  >
+                    <Mail size={14} className="mr-1" /> 連絡する
+                  </a>
+                )}
               </div>
             </div>
             <div className="flex items-center">

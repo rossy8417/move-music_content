@@ -313,6 +313,7 @@ export function NewPost() {
     if (isFacebookAuthenticated && facebookUser) {
       postData.author_name = facebookUser.name || 'Facebook User';
       postData.author_avatar_url = facebookUser.picture?.data?.url || null;
+      postData.facebook_id = facebookUser.id; // Facebook IDを追加
     }
 
     try {
