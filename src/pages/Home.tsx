@@ -184,6 +184,52 @@ export function Home() {
 
   return (
     <div className="space-y-6">
+      {/* カテゴリーナビゲーション - モバイル表示のみ (md:768px未満) */}
+      <div className="flex overflow-x-auto py-2 -mx-4 px-4 scrollbar-hide md:hidden">
+        <div className="flex space-x-2 min-w-full">
+          <Link 
+            to="/" 
+            className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap ${
+              !category ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-800'
+            }`}
+          >
+            ALL
+          </Link>
+          <Link 
+            to="/?category=character" 
+            className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap ${
+              category === 'character' ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-800'
+            }`}
+          >
+            キャラ
+          </Link>
+          <Link 
+            to="/?category=music" 
+            className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap ${
+              category === 'music' ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-800'
+            }`}
+          >
+            音楽
+          </Link>
+          <Link 
+            to="/?category=talk" 
+            className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap ${
+              category === 'talk' ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-800'
+            }`}
+          >
+            トーク
+          </Link>
+          <Link 
+            to="/?category=video" 
+            className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap ${
+              category === 'video' ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-800'
+            }`}
+          >
+            動画
+          </Link>
+        </div>
+      </div>
+
       <h1 className="text-3xl font-bold">
         {category ? `${category.charAt(0).toUpperCase() + category.slice(1)} Posts` : 'All Posts'}
       </h1>
