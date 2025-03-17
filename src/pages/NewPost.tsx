@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
+import { supabase, STORAGE_BUCKET } from '../lib/supabase';
 import type { PostCategory } from '../types/database';
 
 // 環境変数から投稿パスワードを取得
@@ -21,8 +21,79 @@ export function NewPost() {
   const [externalUrl, setExternalUrl] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // 投稿パスワード用の状態を追加
   const [password, setPassword] = useState('');
+  
+  // ファイルアップロード関連の状態
+  const [file, setFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // ファイル選択時の処理
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) {
+      setFile(null);
+      setPreviewUrl(null);
+      return;
+    }
+
+    const selectedFile = e.target.files[0];
+    setFile(selectedFile);
+
+    // ファイルプレビューを生成
+    const objectUrl = URL.createObjectURL(selectedFile);
+    setPreviewUrl(objectUrl);
+
+    // 既存のファイルURLをクリア
+    setFileUrl('');
+
+    return () => {
+      // コンポーネントのクリーンアップ時にURLを解放
+      URL.revokeObjectURL(objectUrl);
+    };
+  };
+
+  // ファイルアップロード処理
+  const uploadFile = async () => {
+    if (!file) return null;
+
+    try {
+      setUploading(true);
+      setUploadProgress(0);
+
+      // ファイル名を一意にするために現在時刻を追加
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${Date.now()}.${fileExt}`;
+      const filePath = `uploads/${fileName}`;
+
+      // Supabaseにファイルをアップロード
+      const { data, error: uploadError } = await supabase.storage
+        .from(STORAGE_BUCKET) // 共通のバケット名を使用
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: false,
+        });
+
+      if (uploadError) {
+        throw uploadError;
+      }
+
+      // アップロードされたファイルの公開URLを取得
+      const { data: { publicUrl } } = supabase.storage
+        .from(STORAGE_BUCKET) // 共通のバケット名を使用
+        .getPublicUrl(filePath);
+
+      setUploadProgress(100);
+      return publicUrl as string;
+    } catch (error) {
+      console.error('ファイルアップロードエラー:', error);
+      setError('ファイルのアップロードに失敗しました');
+      return null;
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -33,13 +104,25 @@ export function NewPost() {
       return;
     }
 
-    if (!fileUrl && !externalUrl) {
-      setError('ファイルURLまたは外部URLのいずれかを入力してください');
+    // ファイルURLまたは外部URLのいずれかが必要
+    if (!file && !fileUrl && !externalUrl) {
+      setError('ファイルをアップロードするか、ファイルURLまたは外部URLのいずれかを入力してください');
       return;
     }
 
     setLoading(true);
     setError(null);
+
+    // ファイルがある場合はアップロード
+    let uploadedFileUrl = fileUrl;
+    if (file) {
+      const uploadedUrl = await uploadFile();
+      if (!uploadedUrl) {
+        setLoading(false);
+        return;
+      }
+      uploadedFileUrl = uploadedUrl;
+    }
 
     // ユーザーIDの代わりに匿名IDを使用
     const anonymousId = 'anonymous-' + Date.now();
@@ -47,12 +130,11 @@ export function NewPost() {
     const { error } = await supabase
       .from('posts')
       .insert({
-        // user_id: user.id, // ユーザーIDの代わりに匿名IDを使用
         user_id: anonymousId,
         title,
         description,
         category,
-        file_url: fileUrl || null,
+        file_url: uploadedFileUrl || null,
         external_url: externalUrl || null,
       });
 
@@ -71,7 +153,7 @@ export function NewPost() {
       <div className="bg-white p-8 rounded-lg shadow-md">
         <h1 className="text-2xl font-bold mb-6">新規投稿作成</h1>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={handleSubmit} className="space-y-6" autoComplete="off">
           <div>
             <label htmlFor="title" className="block text-sm font-medium text-gray-700">
               タイトル
@@ -116,9 +198,73 @@ export function NewPost() {
             </select>
           </div>
 
+          {/* ファイルアップロード部分 */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700">
+              ファイルアップロード
+            </label>
+            <div className="mt-1 flex items-center">
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileChange}
+                className="hidden"
+                id="file-upload"
+              />
+              <label
+                htmlFor="file-upload"
+                className="cursor-pointer bg-white py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+              >
+                ファイルを選択
+              </label>
+              <span className="ml-3 text-sm text-gray-500">
+                {file ? file.name : 'ファイルが選択されていません'}
+              </span>
+            </div>
+
+            {/* ファイルプレビュー */}
+            {previewUrl && (
+              <div className="mt-2">
+                {category === 'character' ? (
+                  <img
+                    src={previewUrl}
+                    alt="プレビュー"
+                    className="h-40 object-contain"
+                  />
+                ) : category === 'video' ? (
+                  <video
+                    src={previewUrl}
+                    controls
+                    className="h-40 object-contain"
+                  />
+                ) : category === 'music' ? (
+                  <audio
+                    src={previewUrl}
+                    controls
+                    className="w-full"
+                  />
+                ) : (
+                  <div className="text-sm text-gray-500">
+                    プレビューを表示できません
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* アップロード進捗バー */}
+            {uploading && (
+              <div className="w-full bg-gray-200 rounded-full h-2.5 mt-2">
+                <div
+                  className="bg-blue-600 h-2.5 rounded-full"
+                  style={{ width: `${uploadProgress}%` }}
+                ></div>
+              </div>
+            )}
+          </div>
+
           <div>
             <label htmlFor="fileUrl" className="block text-sm font-medium text-gray-700">
-              ファイルURL
+              ファイルURL（ファイルをアップロードする場合は不要）
             </label>
             <input
               id="fileUrl"
@@ -126,6 +272,7 @@ export function NewPost() {
               value={fileUrl}
               onChange={(e) => setFileUrl(e.target.value)}
               className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+              autoComplete="off"
             />
           </div>
 
@@ -139,10 +286,11 @@ export function NewPost() {
               value={externalUrl}
               onChange={(e) => setExternalUrl(e.target.value)}
               className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+              autoComplete="off"
             />
           </div>
 
-          {/* 投稿パスワード入力欄を追加 */}
+          {/* 投稿パスワード入力欄 */}
           <div>
             <label htmlFor="password" className="block text-sm font-medium text-gray-700">
               投稿パスワード
@@ -153,6 +301,7 @@ export function NewPost() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+              autoComplete="new-password"
               required
             />
             <p className="mt-1 text-sm text-gray-500">
@@ -166,10 +315,10 @@ export function NewPost() {
 
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || uploading}
             className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50"
           >
-            {loading ? '投稿中...' : '投稿する'}
+            {loading || uploading ? '処理中...' : '投稿する'}
           </button>
         </form>
       </div>

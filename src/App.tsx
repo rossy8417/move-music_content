@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { Header } from './components/Header';
 import { Home } from './pages/Home';
@@ -7,8 +7,14 @@ import { Home } from './pages/Home';
 // import { Profile } from './pages/Profile';
 import { PostDetail } from './pages/PostDetail';
 import { NewPost } from './pages/NewPost';
+import { initializeStorage } from './lib/supabase';
 
 function App() {
+  // アプリケーションの起動時にストレージバケットを初期化
+  useEffect(() => {
+    initializeStorage().catch(console.error);
+  }, []);
+
   return (
     <Router>
       <div className="min-h-screen bg-gray-50">
