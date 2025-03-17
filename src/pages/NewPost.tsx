@@ -263,9 +263,9 @@ export function NewPost() {
       }
     }
 
-    // ランダムなUUIDを生成
-    const anonymousId = uuidv4();
-    console.log('生成したUUID:', anonymousId);
+    // 固定の匿名ユーザーIDを使用
+    const anonymousId = '00000000-0000-0000-0000-000000000000';
+    console.log('使用するユーザーID:', anonymousId);
 
     try {
       const { data, error } = await supabase

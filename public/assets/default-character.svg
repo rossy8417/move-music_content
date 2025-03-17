@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="225" viewBox="0 0 400 225">
+  <rect width="400" height="225" fill="#f0f4f8" />
+  <g transform="translate(150, 60)">
+    <circle cx="50" cy="50" r="40" fill="#4a5568" />
+    <circle cx="35" cy="40" r="5" fill="white" />
+    <circle cx="65" cy="40" r="5" fill="white" />
+    <path d="M 30 65 Q 50 80 70 65" stroke="white" stroke-width="3" fill="none" />
+  </g>
+  <text x="200" y="170" font-family="Arial, sans-serif" font-size="24" text-anchor="middle" fill="#2d3748">キャラクター</text>
+</svg> 

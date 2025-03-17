@@ -175,14 +175,18 @@ export async function checkBucketPermissions() {
     // テストファイルを削除（書き込み成功した場合のみ）
     if (canWrite && testWriteResult.data) {
       console.log('テストファイルを削除します...');
-      const { error: removeError } = await supabase.storage
-        .from(STORAGE_BUCKET)
-        .remove([testWriteResult.data.path]);
-        
-      if (removeError) {
-        console.error('テストファイル削除エラー:', removeError);
-      } else {
-        console.log('テストファイル削除成功');
+      try {
+        const { error: removeError } = await supabase.storage
+          .from(STORAGE_BUCKET)
+          .remove([testWriteResult.data.path]);
+          
+        if (removeError) {
+          console.error('テストファイル削除エラー:', removeError);
+        } else {
+          console.log('テストファイル削除成功');
+        }
+      } catch (deleteError) {
+        console.error('テストファイル削除中に例外が発生しました:', deleteError);
       }
     }
     
@@ -204,24 +208,43 @@ export async function checkBucketPermissions() {
   }
 }
 
-// 直接バケットを作成する関数
-export async function createStorageBucket() {
+// 古いテストファイルを削除する関数
+export async function cleanupTestFiles() {
   try {
-    console.log('バケット作成を試みます...');
-    const { data, error } = await supabase.storage.createBucket(STORAGE_BUCKET, {
-      public: true,
-    });
+    console.log('古いテストファイルの削除を試みます...');
     
+    // バケット内のファイル一覧を取得
+    const { data: files, error } = await supabase.storage
+      .from(STORAGE_BUCKET)
+      .list();
+      
     if (error) {
-      console.error('バケット作成エラー:', error);
-      return false;
+      console.error('ファイル一覧の取得に失敗しました:', error);
+      return;
     }
     
-    console.log('バケット作成成功:', data);
-    return true;
+    // テストファイルをフィルタリング
+    const testFiles = files?.filter(file => file.name.startsWith('_permission_test_')) || [];
+    
+    if (testFiles.length === 0) {
+      console.log('削除すべきテストファイルはありません');
+      return;
+    }
+    
+    console.log(`${testFiles.length}個のテストファイルを削除します...`);
+    
+    // テストファイルを削除
+    const { error: removeError } = await supabase.storage
+      .from(STORAGE_BUCKET)
+      .remove(testFiles.map(file => file.name));
+      
+    if (removeError) {
+      console.error('テストファイルの削除に失敗しました:', removeError);
+    } else {
+      console.log(`${testFiles.length}個のテストファイルを削除しました`);
+    }
   } catch (error) {
-    console.error('バケット作成中の例外:', error);
-    return false;
+    console.error('テストファイルのクリーンアップ中にエラーが発生しました:', error);
   }
 }
 
@@ -343,6 +366,9 @@ export async function initializeStorage() {
     } else {
       console.log(`ストレージバケット '${STORAGE_BUCKET}' は存在します`);
       
+      // 古いテストファイルを削除
+      await cleanupTestFiles();
+      
       // バケット内のフォルダ構造を確認
       try {
         const { data: folders, error: foldersError } = await supabase.storage
@@ -423,5 +449,26 @@ export async function initializeStorage() {
     }
   } catch (error) {
     console.error('ストレージの初期化中にエラーが発生しました:', error);
+  }
+}
+
+// 直接バケットを作成する関数
+export async function createStorageBucket() {
+  try {
+    console.log('バケット作成を試みます...');
+    const { data, error } = await supabase.storage.createBucket(STORAGE_BUCKET, {
+      public: true,
+    });
+    
+    if (error) {
+      console.error('バケット作成エラー:', error);
+      return false;
+    }
+    
+    console.log('バケット作成成功:', data);
+    return true;
+  } catch (error) {
+    console.error('バケット作成中の例外:', error);
+    return false;
   }
 }

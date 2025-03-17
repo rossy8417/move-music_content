@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="225" viewBox="0 0 400 225">
+  <rect width="400" height="225" fill="#f0f4f8" />
+  <g transform="translate(150, 60)">
+    <rect x="10" y="10" width="80" height="80" rx="5" fill="#4a5568" />
+    <rect x="25" y="30" width="50" height="5" fill="white" />
+    <rect x="25" y="45" width="50" height="5" fill="white" />
+    <rect x="25" y="60" width="30" height="5" fill="white" />
+  </g>
+  <text x="200" y="170" font-family="Arial, sans-serif" font-size="24" text-anchor="middle" fill="#2d3748">投稿</text>
+</svg> 
