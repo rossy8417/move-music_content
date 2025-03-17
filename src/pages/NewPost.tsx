@@ -266,7 +266,37 @@ export function NewPost() {
     }
 
     // ユーザーID（Facebookログイン済みの場合はFacebookのID、それ以外は匿名ID）
-    const userId = isFacebookAuthenticated && facebookUser ? facebookUser.id : '00000000-0000-0000-0000-000000000000';
+    // FacebookのIDをUUID形式に変換する
+    let userId = '00000000-0000-0000-0000-000000000000'; // デフォルトは匿名ユーザーID
+    
+    if (isFacebookAuthenticated && facebookUser) {
+      // FacebookのIDを使用してUUIDを生成
+      // 数値IDをUUID形式に変換（ハッシュ化して一貫性を保つ）
+      try {
+        // シンプルな方法: FacebookのIDを文字列として使用し、固定プレフィックスを追加してUUID形式にする
+        const fbId = facebookUser.id;
+        // 最初の8文字を取得（または短い場合はそのまま）
+        const part1 = fbId.substring(0, 8).padEnd(8, '0');
+        // 次の4文字を取得
+        const part2 = fbId.substring(8, 12).padEnd(4, '0');
+        // 次の4文字を取得
+        const part3 = fbId.substring(12, 16).padEnd(4, '0');
+        // 次の4文字を取得
+        const part4 = fbId.substring(16, 20).padEnd(4, '0');
+        // 残りの文字を取得（最大12文字）
+        const part5 = fbId.substring(20, 32).padEnd(12, '0');
+        
+        // UUID形式に組み立て
+        userId = `${part1}-${part2}-${part3}-${part4}-${part5}`;
+        
+        console.log('FacebookIDからUUIDを生成:', facebookUser.id, '->', userId);
+      } catch (error) {
+        console.error('FacebookIDからのUUID生成エラー:', error);
+        // エラーが発生した場合は匿名ユーザーIDを使用
+        userId = '00000000-0000-0000-0000-000000000000';
+      }
+    }
+    
     console.log('使用するユーザーID:', userId);
 
     // 投稿データを準備

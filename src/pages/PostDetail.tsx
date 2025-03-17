@@ -1,13 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { supabase, getPublicFileUrl, STORAGE_BUCKET } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
 import { useFacebookAuth } from '../contexts/FacebookAuthContext';
 import type { Post, Comment, Profile } from '../types/database';
-import { MessageSquare, ThumbsUp, ArrowLeft, ExternalLink, Play, Pause, Volume2, VolumeX } from 'lucide-react';
+import { MessageSquare, ThumbsUp, ArrowLeft, ExternalLink, Play, Pause, Volume2, VolumeX, Trash2 } from 'lucide-react';
 
 export function PostDetail() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const { user: supabaseUser } = useAuth();
   const { user: facebookUser, isAuthenticated: isFacebookAuthenticated } = useFacebookAuth();
   const [post, setPost] = useState<Post | null>(null);
@@ -21,14 +22,91 @@ export function PostDetail() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const audioRef = React.useRef<HTMLAudioElement>(null);
   const videoRef = React.useRef<HTMLVideoElement>(null);
 
   // 匿名ユーザーID（認証なしでも機能を使えるようにする）
   const ANONYMOUS_USER_ID = '00000000-0000-0000-0000-000000000000';
 
+  // FacebookのIDをUUID形式に変換する関数
+  const convertFacebookIdToUuid = (fbId: string): string => {
+    try {
+      // 最初の8文字を取得（または短い場合はそのまま）
+      const part1 = fbId.substring(0, 8).padEnd(8, '0');
+      // 次の4文字を取得
+      const part2 = fbId.substring(8, 12).padEnd(4, '0');
+      // 次の4文字を取得
+      const part3 = fbId.substring(12, 16).padEnd(4, '0');
+      // 次の4文字を取得
+      const part4 = fbId.substring(16, 20).padEnd(4, '0');
+      // 残りの文字を取得（最大12文字）
+      const part5 = fbId.substring(20, 32).padEnd(12, '0');
+      
+      // UUID形式に組み立て
+      return `${part1}-${part2}-${part3}-${part4}-${part5}`;
+    } catch (error) {
+      console.error('FacebookIDからのUUID生成エラー:', error);
+      // エラーが発生した場合は匿名ユーザーIDを使用
+      return ANONYMOUS_USER_ID;
+    }
+  };
+
   // 現在のユーザーID（認証済みまたは匿名）
-  const currentUserId = facebookUser?.id || supabaseUser?.id || ANONYMOUS_USER_ID;
+  const currentUserId = facebookUser 
+    ? convertFacebookIdToUuid(facebookUser.id) 
+    : (supabaseUser?.id || ANONYMOUS_USER_ID);
+
+  // 投稿を削除できるかどうかを判定
+  const canDeletePost = () => {
+    if (!post) return false;
+    
+    // 匿名ユーザーの投稿（user_id が ANONYMOUS_USER_ID）は誰でも削除可能
+    if (post.user_id === ANONYMOUS_USER_ID) {
+      return true;
+    }
+    
+    // Facebookユーザーの投稿は本人のみ削除可能
+    if (post.author_name && post.user_id && facebookUser) {
+      const fbUuid = convertFacebookIdToUuid(facebookUser.id);
+      return post.user_id === fbUuid;
+    }
+    
+    return false;
+  };
+
+  // 投稿削除処理
+  const handleDeletePost = async () => {
+    if (!id || !canDeletePost()) return;
+    
+    setDeleting(true);
+    setActionError(null);
+    
+    try {
+      // 投稿を削除
+      const { error } = await supabase
+        .from('posts')
+        .delete()
+        .eq('id', id);
+      
+      if (error) {
+        console.error('投稿削除エラー:', error);
+        setActionError('投稿の削除に失敗しました: ' + error.message);
+        setDeleting(false);
+        return;
+      }
+      
+      console.log('投稿を削除しました:', id);
+      
+      // 削除成功後はホームページにリダイレクト
+      navigate('/', { replace: true });
+    } catch (err) {
+      console.error('投稿削除中に例外が発生:', err);
+      setActionError('投稿の削除中にエラーが発生しました');
+      setDeleting(false);
+    }
+  };
 
   useEffect(() => {
     if (!id) return;
@@ -313,7 +391,7 @@ export function PostDetail() {
       // コメント情報を準備
       const commentData: any = {
         post_id: id,
-        user_id: currentUserId,
+        user_id: currentUserId, // 既に変換済みのIDを使用
         content: newComment.trim(),
       };
 
@@ -326,6 +404,8 @@ export function PostDetail() {
       else if (commentName.trim() && !isFacebookAuthenticated) {
         commentData.commenter_name = commentName.trim();
       }
+
+      console.log('コメントデータ:', commentData);
 
       const { error } = await supabase
         .from('comments')
@@ -402,31 +482,35 @@ export function PostDetail() {
     setActionError(null);
 
     try {
-    if (hasLiked) {
-      const { error } = await supabase
-        .from('likes')
-        .delete()
-        .eq('post_id', id)
-          .eq('user_id', currentUserId);
+      if (hasLiked) {
+        const { error } = await supabase
+          .from('likes')
+          .delete()
+          .eq('post_id', id)
+          .eq('user_id', currentUserId); // 既に変換済みのIDを使用
 
-      if (!error) {
-        setHasLiked(false);
-        setLikesCount(prev => prev - 1);
+        if (!error) {
+          setHasLiked(false);
+          setLikesCount(prev => prev - 1);
         } else {
           console.error('いいね削除エラー:', error);
           setActionError('いいねの取り消しに失敗しました。');
-      }
-    } else {
-      const { error } = await supabase
-        .from('likes')
-        .insert({
+        }
+      } else {
+        const likeData = {
           post_id: id,
-            user_id: currentUserId,
-        });
+          user_id: currentUserId, // 既に変換済みのIDを使用
+        };
+        
+        console.log('いいねデータ:', likeData);
+        
+        const { error } = await supabase
+          .from('likes')
+          .insert(likeData);
 
-      if (!error) {
-        setHasLiked(true);
-        setLikesCount(prev => prev + 1);
+        if (!error) {
+          setHasLiked(true);
+          setLikesCount(prev => prev + 1);
         } else {
           console.error('いいねエラー:', error);
           setActionError('いいねに失敗しました。テーブルが存在するか確認してください。');
@@ -790,9 +874,46 @@ export function PostDetail() {
                 </span>
               </div>
             </div>
-            <span className="text-sm text-gray-500">
-              {new Date(post.created_at).toLocaleDateString()}
-            </span>
+            <div className="flex items-center">
+              <span className="text-sm text-gray-500 mr-4">
+                {new Date(post.created_at).toLocaleDateString()}
+              </span>
+              
+              {/* 削除ボタン（条件付き表示） */}
+              {canDeletePost() && (
+                <div className="relative">
+                  {!deleteConfirm ? (
+                    <button 
+                      onClick={() => setDeleteConfirm(true)}
+                      className="text-red-500 hover:text-red-700 p-1"
+                      title="投稿を削除"
+                    >
+                      <Trash2 size={18} />
+                    </button>
+                  ) : (
+                    <div className="bg-red-50 border border-red-200 rounded-md p-2 absolute right-0 top-0 z-10 w-48">
+                      <p className="text-sm text-red-600 mb-2">本当に削除しますか？</p>
+                      <div className="flex justify-between">
+                        <button
+                          onClick={() => setDeleteConfirm(false)}
+                          className="text-sm text-gray-600 px-2 py-1 rounded hover:bg-gray-200"
+                          disabled={deleting}
+                        >
+                          キャンセル
+                        </button>
+                        <button
+                          onClick={handleDeletePost}
+                          className="text-sm bg-red-600 text-white px-2 py-1 rounded hover:bg-red-700"
+                          disabled={deleting}
+                        >
+                          {deleting ? '削除中...' : '削除する'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
 
           {renderContent()}
@@ -825,9 +946,9 @@ export function PostDetail() {
             <div className="flex items-center space-x-1 text-gray-600">
               <MessageSquare size={20} />
               <span>{comments.length}</span>
+            </div>
           </div>
         </div>
-      </div>
 
         <div className="border-t border-gray-200 p-6">
           <h2 className="text-xl font-semibold mb-4">コメント</h2>
