@@ -36,7 +36,7 @@ export function NewPost() {
   
   // 一時的なシステム通知
   const [systemNotice, setSystemNotice] = useState<string | null>(
-    'ファイルアップロード機能を使用するには、管理者がストレージバケットを作成する必要があります。現在、ファイルアップロードは利用できない可能性があります。外部URLを使用してください。'
+    'ファイルアップロードは最大50MBまで可能です。特に動画や音声の場合、6MB以上のファイルはアップロード中に中断される可能性があります。大きなファイルの場合は外部URLの利用をおすすめします。'
   );
 
   // バケットの状態を追跡
@@ -72,19 +72,19 @@ export function NewPost() {
         
         // バケットが存在しないか、権限がない場合はシステム通知を更新
         if (!permissions.exists || !permissions.canWrite) {
-          let message = 'ファイルアップロード機能は現在利用できません。';
+          let message = 'ファイルアップロードは最大50MBまで可能ですが、';
           
           if (!permissions.exists) {
             if (permissions.error && permissions.error.includes('大文字小文字')) {
               message += 'バケット名の大文字小文字が一致していません。管理者に連絡してください。';
             } else {
-              message += 'ストレージバケットが存在しません。管理者に連絡してください。';
+              message += 'ストレージバケットの問題により現在利用できない可能性があります。';
             }
           } else if (!permissions.canWrite) {
             message += 'アップロード権限がありません。管理者に連絡してください。';
           }
           
-          message += ' 外部URLを使用してください。';
+          message += ' 6MB以上の動画や音声ファイルはアップロード中に中断される可能性があります。大きなファイルの場合は外部URLの利用をおすすめします。';
           setSystemNotice(message);
         }
       } catch (error) {
@@ -129,7 +129,7 @@ export function NewPost() {
         ? `ストレージバケット '${STORAGE_BUCKET}' が存在しないため、ファイルをアップロードできません。`
         : 'アップロード権限がないため、ファイルをアップロードできません。';
       
-      setError(errorMsg + ' 外部URLを使用してください。');
+      setError(errorMsg + ' YouTubeなどの外部URLをご利用ください。');
       return null;
     }
 
